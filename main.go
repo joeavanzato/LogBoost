@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -56,6 +57,8 @@ var maxMindFileLocations = map[string]string{
 	"Country": "",
 }
 
+var auditLogIPRegex = regexp.MustCompile(`.*ClientIP":"(?P<ClientIP>.*?)",.*`)
+
 type IPCache struct {
 	ASNOrg  string
 	Country string
@@ -66,8 +69,6 @@ type IPCache struct {
 
 var IPCacheMap = make(map[string]IPCache)
 var IPCacheMapLock = sync.RWMutex{}
-
-var auditLogIPRegex = regexp.MustCompile(`.*ClientIP":"(?P<ClientIP>.*?)",.*`)
 
 // TODO - Measure performance and compare to using sync.Map instead
 func CheckIP(ip string) (IPCache, bool) {
@@ -80,6 +81,22 @@ func AddIP(ip string, ipcache IPCache) {
 	IPCacheMapLock.Lock()
 	defer IPCacheMapLock.Unlock()
 	IPCacheMap[ip] = ipcache
+}
+
+var DNSCacheMap = make(map[string][]string)
+var DNSCacheMapLock = sync.RWMutex{}
+
+// TODO - Measure performance and compare to using sync.Map instead
+func CheckIPDNS(ip string) ([]string, bool) {
+	DNSCacheMapLock.RLock()
+	defer DNSCacheMapLock.RUnlock()
+	v, e := DNSCacheMap[ip]
+	return v, e
+}
+func AddIPDNS(ip string, records []string) {
+	DNSCacheMapLock.Lock()
+	defer DNSCacheMapLock.Unlock()
+	DNSCacheMap[ip] = records
 }
 
 type WaitGroupCount struct {
@@ -305,6 +322,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	api := flag.String("api", "", "Provide your MaxMind API Key - if not provided, will check for environment variable 'MM_API' and then 'mm_api.txt' in cwd, in that order.")
 	separator := flag.String("separator", "=", "Use provided value as separator for KV logging.")
 	delimiter := flag.String("delimiter", ",", "Use provided value as KV delimiter for KV logging.")
+	dns := flag.Bool("dns", false, "[TODO] - If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
 	flag.Parse()
 
 	arguments := map[string]any{
@@ -319,6 +337,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 		"convert":    *convert,
 		"separator":  *separator,
 		"delimiter":  *delimiter,
+		"dns":        *dns,
 	}
 	return arguments
 }
@@ -401,6 +420,10 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	// 3 - mkdirall as needed
 
 	for _, file := range logFiles {
+		base := strings.ToLower(filepath.Base(file))
+		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) {
+			continue
+		}
 		inputFile := file
 		remainderPathSplit := strings.SplitN(filepath.Dir(file), fmt.Sprintf("%v\\", arguments["logdir"].(string)), 2)
 		remainderPath := ""
@@ -437,7 +460,7 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 	ipAddressColumn := -1
 	jsonColumn := -1
 	headers := make([]string, 0)
-	geoFields := []string{"_ASN", "_Country", "_City", "Proxy"}
+	geoFields := []string{"_ASN", "_Country", "_City", "Proxy", "Domains"}
 	newHeaderCount := 0
 	for {
 		record, err := parser.Read()
@@ -571,7 +594,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			}
 		}
 
-		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool))
+		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool))
 		err = newWrite.Write(record)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -648,7 +671,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 			break
 		}
 	}
-	geoFields := []string{"_ASN", "_Country", "_City", "Proxy"}
+	geoFields := []string{"_ASN", "_Country", "_City", "Proxy", "Domains"}
 	headers = append(headers, geoFields...)
 	err = writer.Write(headers)
 	if err != nil {
@@ -676,7 +699,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 			return err
 		}
 
-		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool))
+		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool))
 		err = writer.Write(record)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -740,7 +763,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//return net.ParseIP(results["ClientIP"])
 }
 
-func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool) []string {
+func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool) []string {
 	// ASN, Country, City, Proxy
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 	//ip := net.ParseIP("0.0.0.0")
@@ -756,68 +779,88 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		// TODO
 	} else {
 		// Could not identify which a column storing IP address column or JSON blob
-		record = append(record, "", "", "", "")
+		record = append(record, "", "", "", "", "")
 		return record
 	}
 
 	if ipString == "" {
-		record = append(record, "", "", "", "")
+		record = append(record, "", "", "", "", "")
 		return record
 	}
 
-	ipStruct, exists := CheckIP(ipString)
-	if exists {
+	ipStruct, IPCacheExists := CheckIP(ipString)
+	if IPCacheExists {
 		if ipStruct.Proxy {
 			record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, "true")
-			return record
 		}
 		record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, "false")
-		return record
 	}
-
-	ipTmpStruct := IPCache{
-		ASNOrg:  "",
-		Country: "",
-		City:    "",
-		Domain:  "",
-		Proxy:   false,
-	}
-	ip := net.ParseIP(ipString)
-	if ip == nil {
-		record = append(record, "", "", "", "")
-		return record
-	}
-
-	tmpCity := City{}
-	tmpAsn := ASN{}
-	err := asnDB.Lookup(ip, &tmpAsn)
-	if err != nil {
-		ipTmpStruct.ASNOrg = ""
-		record = append(record, "")
-	} else {
-		ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
-		record = append(record, tmpAsn.AutonomousSystemOrganization)
-	}
-	err = cityDB.Lookup(ip, &tmpCity)
-	if err != nil {
-		ipTmpStruct.Country = ""
-		ipTmpStruct.City = ""
-		ipTmpStruct.Proxy = false
-		record = append(record, "", "", "")
-	} else {
-		anon := ""
-		if tmpCity.Traits.IsAnonymousProxy {
-			anon = "true"
-			ipTmpStruct.Proxy = true
-		} else {
-			anon = "false"
-			ipTmpStruct.Proxy = false
+	if !IPCacheExists {
+		ipTmpStruct := IPCache{
+			ASNOrg:  "",
+			Country: "",
+			City:    "",
+			Domain:  "",
+			Proxy:   false,
 		}
-		ipTmpStruct.Country = tmpCity.Country.Names["en"]
-		ipTmpStruct.City = tmpCity.City.Names["en"]
-		record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"], anon)
+		ip := net.ParseIP(ipString)
+		if ip == nil {
+			record = append(record, "", "", "", "", "")
+			return record
+		}
+		tmpCity := City{}
+		tmpAsn := ASN{}
+		err := asnDB.Lookup(ip, &tmpAsn)
+		if err != nil {
+			ipTmpStruct.ASNOrg = ""
+			record = append(record, "")
+		} else {
+			ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
+			record = append(record, tmpAsn.AutonomousSystemOrganization)
+		}
+		err = cityDB.Lookup(ip, &tmpCity)
+		if err != nil {
+			ipTmpStruct.Country = ""
+			ipTmpStruct.City = ""
+			ipTmpStruct.Proxy = false
+			record = append(record, "", "", "")
+		} else {
+			anon := ""
+			if tmpCity.Traits.IsAnonymousProxy {
+				anon = "true"
+				ipTmpStruct.Proxy = true
+			} else {
+				anon = "false"
+				ipTmpStruct.Proxy = false
+			}
+			ipTmpStruct.Country = tmpCity.Country.Names["en"]
+			ipTmpStruct.City = tmpCity.City.Names["en"]
+			record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"], anon)
+		}
+		AddIP(ipString, ipTmpStruct)
 	}
-	AddIP(ipString, ipTmpStruct)
+
+	if useDNS {
+		records, dnsExists := CheckIPDNS(ipString)
+		baseDNS := ""
+		if dnsExists {
+			for _, v := range records {
+				baseDNS += v
+				baseDNS += ", "
+			}
+			record = append(record, baseDNS)
+		} else {
+			dnsRecords := lookupIPRecords(ipString)
+			AddIPDNS(ipString, dnsRecords)
+			for _, v := range dnsRecords {
+				baseDNS += v
+				baseDNS += ", "
+			}
+			record = append(record, baseDNS)
+		}
+	} else {
+		record = append(record, "")
+	}
 	return record
 }
 
@@ -891,6 +934,15 @@ func decodeJsonKeys(m map[string]interface{}) []string {
 		}
 	}
 	return keys
+}
+
+func lookupIPRecords(ip string) []string {
+	records, err := net.DefaultResolver.LookupAddr(context.Background(), ip)
+	if err != nil {
+		//fmt.Println(err.Error())
+		return []string{"None"}
+	}
+	return records
 }
 
 func main() {
