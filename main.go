@@ -11,6 +11,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -225,14 +226,14 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 	return nil
 }
 
-func findOrGetDBs(arguments map[string]string, logger zerolog.Logger) {
+func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) {
 	dir, err := os.Getwd()
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return
 	}
-	if arguments["dbdir"] != "" {
-		dir = arguments["dbdir"]
+	if arguments["dbdir"].(string) != "" {
+		dir = arguments["dbdir"].(string)
 	}
 
 	logger.Info().Msgf("Checking Directory '%v' for MaxMind DBs", dir)
@@ -292,7 +293,7 @@ func findOrGetDBs(arguments map[string]string, logger zerolog.Logger) {
 	}
 }
 
-func parseArgs(logger zerolog.Logger) map[string]string {
+func parseArgs(logger zerolog.Logger) map[string]any {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
 	logDir := flag.String("logdir", "", "Directory containing 1 or more Azure AD CSV Exports to enrich")
 	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD\\output'")
@@ -300,38 +301,31 @@ func parseArgs(logger zerolog.Logger) map[string]string {
 	jsoncolumn := flag.String("jsoncol", "AuditData", "Will check for a column with this name to find the JSON Audit blob for enrichment. (Defaults to 'AuditData' per Azure defaults)")
 	flatten := flag.Bool("flatten", false, "[TODO - Does not function properly with events that have dynamic keys] - If enabled, will flatten JSON fields using the separator '_'")
 	regex := flag.Bool("regex", false, "[TODO] - If enabled, will use regex against the entire line to find the first IP address present to enrich")
+	convert := flag.Bool("convert", false, "If enabled, will check for additional .log or .txt files in the logs dir, convert them to an intermediate CSV and process as normal.  Capable of parsing IIS, W3C or k:v style logs - for k:v please provide separator value via '-separator' flag and delimiter as '-delimiter' flag.")
 	api := flag.String("api", "", "Provide your MaxMind API Key - if not provided, will check for environment variable 'MM_API' and then 'mm_api.txt' in cwd, in that order.")
+	separator := flag.String("separator", "=", "Use provided value as separator for KV logging.")
+	delimiter := flag.String("delimiter", ",", "Use provided value as KV delimiter for KV logging.")
 	flag.Parse()
 
-	flattenS := ""
-	if *flatten {
-		flattenS = "true"
-	} else {
-		flattenS = "false"
-	}
-	regexS := ""
-	if *regex {
-		regexS = "true"
-	} else {
-		regexS = "false"
-	}
-	// TODO - Should have used map[string]any for this - will fix later.
-	arguments := map[string]string{
+	arguments := map[string]any{
 		"dbdir":      *dbDir,
 		"logdir":     *logDir,
 		"outputdir":  *outputDir,
 		"IPcolumn":   *column,
 		"JSONcolumn": *jsoncolumn,
-		"flatten":    flattenS,
+		"flatten":    *flatten,
 		"api":        *api,
-		"regex":      regexS,
+		"regex":      *regex,
+		"convert":    *convert,
+		"separator":  *separator,
+		"delimiter":  *delimiter,
 	}
 	return arguments
 }
 
-func setAPIUrls(arguments map[string]string, logger zerolog.Logger) {
+func setAPIUrls(arguments map[string]any, logger zerolog.Logger) {
 	apiKey := ""
-	if arguments["api"] == "" {
+	if arguments["api"].(string) == "" {
 		logger.Info().Msg("API Key not provided at command line - checking for ENV VAR")
 		// API not provided at cmdline
 		val, exists := os.LookupEnv("MM_API")
@@ -350,7 +344,7 @@ func setAPIUrls(arguments map[string]string, logger zerolog.Logger) {
 		}
 	} else {
 		logger.Info().Msgf("Reading API Key from provided commandline")
-		apiKey = arguments["api"]
+		apiKey = arguments["api"].(string)
 	}
 	if apiKey == "" {
 		logger.Error().Msg("Could not find valid API Key")
@@ -365,43 +359,74 @@ func setAPIUrls(arguments map[string]string, logger zerolog.Logger) {
 	maxMindURLs["Country"] = geoLiteCountryDBURL
 }
 
-func findLogsToProcess(arguments map[string]string, logger zerolog.Logger) ([]string, error) {
-	logDir := arguments["logdir"]
+var logsToProcess = make([]string, 0)
+
+func findLogsToProcess(arguments map[string]any, logger zerolog.Logger) ([]string, error) {
+	logDir := arguments["logdir"].(string)
 	logger.Info().Msgf("Checking for Log Files at Path: %v", logDir)
 	_, err := os.Stat(logDir)
 	if os.IsNotExist(err) {
 		logger.Error().Msgf("Could not find directory: %v", logDir)
-		return make([]string, 1), err
+		return make([]string, 0), err
 	}
-	globPattern := fmt.Sprintf("%v\\*.csv", logDir)
-	entries, err := filepath.Glob(globPattern)
+	//globPattern := fmt.Sprintf("%v\\*.csv", logDir)
+	//entries, err := filepath.Glob(globPattern)
+	err = filepath.WalkDir(logDir, visit)
 	if err != nil {
 		logger.Error().Msg(err.Error())
-		return make([]string, 1), err
+		return make([]string, 0), err
 	}
-	logger.Info().Msgf("Found %v CSV files to process", len(entries))
-	return entries, nil
+	logger.Info().Msgf("Found %v files to process", len(logsToProcess))
+	return logsToProcess, nil
 }
 
-func enrichLogs(arguments map[string]string, logFiles []string, logger zerolog.Logger) {
-	outputDir := arguments["outputdir"]
+func visit(path string, di fs.DirEntry, err error) error {
+	if strings.HasSuffix(strings.ToLower(path), ".csv") || strings.HasSuffix(strings.ToLower(path), ".log") || strings.HasSuffix(strings.ToLower(path), ".txt") {
+		logsToProcess = append(logsToProcess, path)
+	}
+	return nil
+}
+
+func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logger) {
+	outputDir := arguments["outputdir"].(string)
 	if err := os.MkdirAll(outputDir, os.ModeSticky|os.ModePerm); err != nil {
 		logger.Error().Msg(err.Error())
 		return
 	}
 	var waitGroup WaitGroupCount
+	// Right now, we are getting the base file name and attaching it to the output directory and using this as the output path for each file
+	// Instead, I want to find the dir structure from the input file and recreate as appropriate for each source file.
+	// 1 - Get directory of input file
+	// 2 - Split string by the logs dir to basically remove that - then we are left with remaining output dir
+	// 3 - mkdirall as needed
 
 	for _, file := range logFiles {
-		waitGroup.Add(1)
 		inputFile := file
-		outputFile := fmt.Sprintf("%v\\%v", outputDir, filepath.Base(file))
+		remainderPathSplit := strings.SplitN(filepath.Dir(file), fmt.Sprintf("%v\\", arguments["logdir"].(string)), 2)
+		remainderPath := ""
+		outputPath := ""
+		if len(remainderPathSplit) == 2 {
+			remainderPath = remainderPathSplit[1]
+			outputPath = fmt.Sprintf("%v\\%v", outputDir, remainderPath)
+		} else {
+			outputPath = outputDir
+		}
+
+		err := os.MkdirAll(outputPath, os.ModePerm)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			continue
+		}
+
+		outputFile := fmt.Sprintf("%v\\%v", outputPath, filepath.Base(file))
+		waitGroup.Add(1)
 		go processFile(arguments, inputFile, outputFile, logger, &waitGroup)
 	}
 	waitGroup.Wait()
 	logger.Info().Msg("Done Processing all Files!")
 }
 
-func setupHeaders(logger zerolog.Logger, arguments map[string]string, parser *csv.Reader, writer *csv.Writer) (int, int, int, []string, error) {
+func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.Reader, writer *csv.Writer) (int, int, int, []string, error) {
 	// If flat CSV with no JSON, write the original headers plus new ones for the geo attributes
 	// If JSON field with flatten option, write original headers, then embedded JSON headers then geo attributes
 	// returns ints representing which column index in original data represents either the straight IP Address as well as JSON - -1 if does not exist.
@@ -425,17 +450,17 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]string, parser *cs
 
 			// TODO - Support multiple possible IP address fields and use the first one - let user enter slice as argument instead of only string.
 			for i, k := range record {
-				if strings.ToLower(k) == strings.ToLower(arguments["IPcolumn"]) {
+				if strings.ToLower(k) == strings.ToLower(arguments["IPcolumn"].(string)) {
 					ipAddressColumn = i
 				}
-				if strings.ToLower(k) == strings.ToLower(arguments["JSONcolumn"]) {
+				if strings.ToLower(k) == strings.ToLower(arguments["JSONcolumn"].(string)) {
 					jsonColumn = i
 				}
 			}
 			idx += 1
 		} else {
 			// if flatten, we check now for JSON blob column, parse out fields and add to our headers
-			if jsonColumn != -1 && arguments["flatten"] == "true" {
+			if jsonColumn != -1 && arguments["flatten"].(bool) {
 				var d interface{}
 				err := json.Unmarshal([]byte(record[jsonColumn]), &d)
 				if err != nil {
@@ -490,29 +515,7 @@ func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.
 	return parser, writer, err
 }
 
-func processFile(arguments map[string]string, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount) {
-	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
-	defer waitGroup.Done()
-
-	asnDB, err := maxminddb.Open(maxMindFileLocations["ASN"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer asnDB.Close()
-	cityDB, err := maxminddb.Open(maxMindFileLocations["City"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer cityDB.Close()
-	countryDB, err := maxminddb.Open(maxMindFileLocations["Country"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer countryDB.Close()
-
+func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string) {
 	parser, writer, err := getNewPW(logger, inputFile, outputFile)
 	if err != nil {
 		return
@@ -547,7 +550,7 @@ func processFile(arguments map[string]string, inputFile string, outputFile strin
 			idx += 1
 			continue
 		}
-		if jsonColumn != -1 && arguments["flatten"] == "true" {
+		if jsonColumn != -1 && arguments["flatten"].(bool) {
 			var d interface{}
 			err := json.Unmarshal([]byte(record[jsonColumn]), &d)
 			if err != nil {
@@ -565,13 +568,44 @@ func processFile(arguments map[string]string, inputFile string, outputFile strin
 			}
 		}
 
-		record = enrichRecord(logger, record, *asnDB, *cityDB, *countryDB, ipAddressColumn, jsonColumn, arguments["regex"])
+		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool))
 		err = newWrite.Write(record)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
 		idx += 1
 	}
+}
+
+func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount) {
+	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
+	defer waitGroup.Done()
+
+	asnDB, err := maxminddb.Open(maxMindFileLocations["ASN"])
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	defer asnDB.Close()
+	cityDB, err := maxminddb.Open(maxMindFileLocations["City"])
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	defer cityDB.Close()
+	countryDB, err := maxminddb.Open(maxMindFileLocations["Country"])
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	defer countryDB.Close()
+
+	if strings.HasSuffix(inputFile, ".csv") {
+		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile)
+	} else {
+		//fmt.Println(outputDir)
+	}
+
 }
 
 func findClientIP(logger zerolog.Logger, jsonBlob string) string {
@@ -593,7 +627,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//return net.ParseIP(results["ClientIP"])
 }
 
-func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex string) []string {
+func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool) []string {
 	// ASN, Country, City, Proxy
 	//ip := net.ParseIP("0.0.0.0")
 	ipString := ""
@@ -603,7 +637,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	} else if jsonColumn != -1 {
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString = findClientIP(logger, record[jsonColumn])
-	} else if useRegex == "true" {
+	} else if useRegex {
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString = findClientIP(logger, record[jsonColumn])
 	} else {
