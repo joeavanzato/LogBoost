@@ -13,7 +13,7 @@ The tool will automatically download and extract the latest version of each data
 
 Additionally, if databases are stored elsewhere on disk, a path to the directory may be provided via the 'dbdir' argument.
 
-Commandline Arguments:
+### Commandline Arguments:
 ```
 * -dbdir - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
 * -api - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
