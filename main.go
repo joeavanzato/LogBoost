@@ -657,6 +657,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 	}
 	idx := 0
 	scanner := bufio.NewScanner(inputF)
+	// Limited to ~65k characters in a single line - won't work with crazy complex log types but should be fine for IIS/W3C
 	for scanner.Scan() {
 		if idx == 0 {
 			idx += 1
@@ -741,6 +742,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool) []string {
 	// ASN, Country, City, Proxy
+	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 	//ip := net.ParseIP("0.0.0.0")
 	ipString := ""
 	if ipAddressColumn != -1 {
@@ -751,7 +753,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		ipString = findClientIP(logger, record[jsonColumn])
 	} else if useRegex {
 		//ip = findClientIP(logger, record[jsonColumn])
-		ipString = findClientIP(logger, record[jsonColumn])
+		// TODO
 	} else {
 		// Could not identify which a column storing IP address column or JSON blob
 		record = append(record, "", "", "", "")
