@@ -418,7 +418,10 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 			continue
 		}
 
-		outputFile := fmt.Sprintf("%v\\%v", outputPath, filepath.Base(file))
+		baseFile := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+		baseFile += ".csv"
+
+		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
 		waitGroup.Add(1)
 		go processFile(arguments, inputFile, outputFile, logger, &waitGroup)
 	}
@@ -504,11 +507,11 @@ func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
-	ouputF, err := createOutput(outputFile)
+	outputF, err := createOutput(outputFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
-	parser, writer, err := setupReadWrite(inputF, ouputF)
+	parser, writer, err := setupReadWrite(inputF, outputF)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
@@ -599,13 +602,122 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		return
 	}
 	defer countryDB.Close()
-
-	if strings.HasSuffix(inputFile, ".csv") {
+	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile)
-	} else {
-		//fmt.Println(outputDir)
+		return
+	} else if (strings.HasSuffix(strings.ToLower(inputFile), ".txt") || strings.HasSuffix(strings.ToLower(inputFile), ".log")) && arguments["convert"].(bool) {
+		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
+		// TODO - Parse IIS/W3C style logs -
+		// 1 - Check if file is IIS/W3C Log and Handle
+		// 2 - If not (missing Fields# line - then assume it is some type of kv logging and use known separator/delimiter to parse out records
+		isIISorW3c, fields, delim, err := checkIISorW3c(logger, inputFile)
+		if err != nil {
+			return
+		}
+		if isIISorW3c {
+			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile)
+			if err != nil {
+				logger.Error().Msg(err.Error())
+			}
+			return
+		}
 	}
+}
 
+func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string) error {
+	inputF, err := openInput(inputFile)
+	if err != nil {
+		return err
+	}
+	defer inputF.Close()
+	outputF, err := createOutput(outputFile)
+	if err != nil {
+		return err
+	}
+	defer outputF.Close()
+	writer := csv.NewWriter(outputF)
+	ipAddressColumn := -1
+	for i, v := range headers {
+		// user provided var
+		if strings.ToLower(v) == strings.ToLower(arguments["IPcolumn"].(string)) {
+			ipAddressColumn = i
+			break
+			// iis default
+		} else if strings.ToLower(v) == strings.ToLower("ClientIpAddress") {
+			ipAddressColumn = i
+			break
+		}
+	}
+	geoFields := []string{"_ASN", "_Country", "_City", "Proxy"}
+	headers = append(headers, geoFields...)
+	err = writer.Write(headers)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	idx := 0
+	scanner := bufio.NewScanner(inputF)
+	for scanner.Scan() {
+		if idx == 0 {
+			idx += 1
+			continue
+		}
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		record := strings.Split(line, delim)
+		if err := scanner.Err(); err == io.EOF {
+			break
+		}
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return err
+		}
+
+		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool))
+		err = writer.Write(record)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+		}
+		idx += 1
+	}
+	return nil
+}
+
+func checkIISorW3c(logger zerolog.Logger, inputFile string) (bool, []string, string, error) {
+	f, err := os.Open(inputFile)
+	defer f.Close()
+	fields := make([]string, 0)
+	if err != nil {
+		return false, fields, "", err
+	}
+	scanner := bufio.NewScanner(f)
+	for i := 0; i < 8; i++ {
+		if scanner.Scan() {
+			if strings.HasPrefix(strings.ToLower(scanner.Text()), "#fields:") {
+				fieldSplit := strings.Split(scanner.Text(), " ")
+				iisStyle := false
+				if len(fieldSplit) == 2 {
+					// IIS style comma-separated  - #Fields field1,field2
+					iisStyle = true
+				}
+				fieldData := strings.TrimSpace(strings.Split(scanner.Text(), "#Fields:")[1])
+				// Now we have all fields - just split by either comma or space depending on iis or w3c styling
+				headers := make([]string, 0)
+				delim := ""
+				if iisStyle {
+					headers = append(headers, strings.Split(fieldData, ",")...)
+					delim = ","
+				} else {
+					headers = append(headers, strings.Split(fieldData, " ")...)
+					delim = " "
+				}
+				return true, headers, delim, nil
+			}
+		}
+	}
+	return false, fields, "", err
 }
 
 func findClientIP(logger zerolog.Logger, jsonBlob string) string {
