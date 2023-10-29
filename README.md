@@ -2,6 +2,8 @@
  
 log2geo is a command-line utility designed to enrich CSV files (primarily from Azure AD) with IP address ASN, Country and City information provided by MaxMind GeoLite2 DBs.
 
+The tool is also capable of enriching reverse-mapped domain names for each IP address detected in the source files.  It is also capable of parsing IIS/W3C log files.  KV style logs is in the TODO list.
+
 To use this tool, a free API key from MaxMind is required - once an account is registered, a personal license key can be generated at https://www.maxmind.com/en/accounts/668938/license-key.
 
 This license key must be provided in one of 3 ways to the tool:
@@ -15,23 +17,23 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 
 ### Commandline Arguments:
 ```
--dbdir[string] - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
--api[string] - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
--logdir[string] - specify the directory containing one or more CSV files to process
--outputdir[string] - specify the directory to store enriched logs - defaults to $CWD\output
--ipcol[string] - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
--jsoncol[string] - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
--flatten[bool] - [TODO] - flatten a nested JSON structure into a CSV
+-dbdir[string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
+-api[string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
+-logdir[string] (default="input") - specify the directory containing one or more CSV files to process
+-outputdir[string] (default="output") - specify the directory to store enriched logs - defaults to $CWD\output
+-ipcol[string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
+-jsoncol[string] (default="AuditData") - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
+-flatten[bool] (default=false) - [TODO] - flatten a nested JSON structure into a CSV
 -regex[bool] - [TODO] - scan each line for IP address matches via regex and outpute all results to CSV
--convert[bool] - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
+-convert[bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
   - IIS - Looks for #Fields and comma-delimited values
   - W3C - Looks for #Fields and space-delimited values
   - KV - Looks for KV-style logging based on provided -delimiter and -separator values
--separator[string] - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
--delimiter[string] - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
--dns[bool] - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
--maxgoperfile[int] - Limit number of goroutines spawned per file for concurrent chunk processing
--batchsize[int] - Limit how many lines per-file are sent to each spawned goroutine
+-separator[string] (default="=") - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
+-delimiter[string] (default=" ") - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
+-dns[bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
+-maxgoperfile[int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
+-batchsize[int] (default=50) - Limit how many lines per-file are sent to each spawned goroutine
 ```
 
 ## Example Usage

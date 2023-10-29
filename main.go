@@ -334,7 +334,7 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) {
 
 func parseArgs(logger zerolog.Logger) map[string]any {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
-	logDir := flag.String("logdir", "", "Directory containing 1 or more Azure AD CSV Exports to enrich")
+	logDir := flag.String("logdir", "input", "Directory containing 1 or more Azure AD CSV Exports to enrich")
 	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD\\output'")
 	column := flag.String("ipcol", "IP address", "Will check for a column with this name to find IP addresses for enrichment. (Defaults to 'IP Address' per Azure defaults)")
 	jsoncolumn := flag.String("jsoncol", "AuditData", "Will check for a column with this name to find the JSON Audit blob for enrichment. (Defaults to 'AuditData' per Azure defaults)")
@@ -346,7 +346,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	delimiter := flag.String("delimiter", ",", "[TODO] Use provided value as KV delimiter for KV logging.")
 	dns := flag.Bool("dns", false, "[TODO] - If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
 	maxgoperfile := flag.Int("maxgoperfile", 10, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
-	batchsize := flag.Int("batchsize", 20, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
+	batchsize := flag.Int("batchsize", 50, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
 	flag.Parse()
 
 	arguments := map[string]any{
