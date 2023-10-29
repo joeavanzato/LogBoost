@@ -373,23 +373,25 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	dns := flag.Bool("dns", false, "[TODO] - If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
 	maxgoperfile := flag.Int("maxgoperfile", 20, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
 	batchsize := flag.Int("batchsize", 100, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
+	concurrentfiles := flag.Int("concurrentfiles", 1000, "Maximum number of files to process concurrently.")
 	flag.Parse()
 
 	arguments := map[string]any{
-		"dbdir":        *dbDir,
-		"logdir":       *logDir,
-		"outputdir":    *outputDir,
-		"IPcolumn":     *column,
-		"JSONcolumn":   *jsoncolumn,
-		"flatten":      *flatten,
-		"api":          *api,
-		"regex":        *regex,
-		"convert":      *convert,
-		"separator":    *separator,
-		"delimiter":    *delimiter,
-		"dns":          *dns,
-		"maxgoperfile": *maxgoperfile,
-		"batchsize":    *batchsize,
+		"dbdir":           *dbDir,
+		"logdir":          *logDir,
+		"outputdir":       *outputDir,
+		"IPcolumn":        *column,
+		"JSONcolumn":      *jsoncolumn,
+		"flatten":         *flatten,
+		"api":             *api,
+		"regex":           *regex,
+		"convert":         *convert,
+		"separator":       *separator,
+		"delimiter":       *delimiter,
+		"dns":             *dns,
+		"maxgoperfile":    *maxgoperfile,
+		"batchsize":       *batchsize,
+		"concurrentfiles": *concurrentfiles,
 	}
 	return arguments
 }
@@ -475,6 +477,11 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 		outputSizeMBytes: 0,
 		mw:               sync.RWMutex{},
 	}
+	jobTracker := runningJobs{
+		JobCount: 0,
+		mw:       sync.RWMutex{},
+	}
+	maxConcurrentFiles := arguments["concurrentfiles"].(int)
 
 	for _, file := range logFiles {
 		fileStat, ferr := os.Stat(file)
@@ -508,11 +515,29 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 		baseFile += ".csv"
 
 		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
-		waitGroup.Add(1)
-		go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker)
+
+		if jobTracker.GetJobs() >= maxConcurrentFiles {
+		waitForOthers:
+			for {
+				if jobTracker.GetJobs() >= maxConcurrentFiles {
+					continue
+				} else {
+					jobTracker.AddJob()
+					waitGroup.Add(1)
+					go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker, &jobTracker)
+					break waitForOthers
+				}
+			}
+		} else {
+			jobTracker.AddJob()
+			waitGroup.Add(1)
+			go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker, &jobTracker)
+		}
+
 	}
 	waitGroup.Wait()
 	logger.Info().Msg("Done Processing all Files!")
+	logger.Info().Msgf("Files Processed: %v", len(logFiles))
 	logger.Info().Msgf("Input Size (Megabytes): %v", sizeTracker.inputSizeMBytes)
 	logger.Info().Msgf("Output Size (Megabytes): %v", sizeTracker.outputSizeMBytes)
 }
@@ -704,8 +729,9 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	closeChannelWhenDone(recordChannel, &fileWG)
 }
 
-func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *Size) {
+func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *Size, t *runningJobs) {
 	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
+	defer t.SubJob()
 	defer waitGroup.Done()
 
 	asnDB, err := maxminddb.Open(maxMindFileLocations["ASN"])
