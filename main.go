@@ -88,17 +88,19 @@ func (job *runningJobs) SubJob() {
 	job.JobCount -= 1
 }
 
-type Size struct {
-	inputSizeMBytes  int
-	outputSizeMBytes int
-	mw               sync.RWMutex
+type SizeTracker struct {
+	inputSizeMBytes      int
+	outputSizeMBytes     int
+	mw                   sync.RWMutex
+	actualFilesProcessed int
 }
 
-func (s *Size) AddBytes(in int, out int) {
+func (s *SizeTracker) AddBytes(in int, out int) {
 	s.mw.Lock()
 	defer s.mw.Unlock()
 	s.inputSizeMBytes += in
 	s.outputSizeMBytes += out
+	s.actualFilesProcessed += 1
 }
 
 // TODO - Put lock and map in single struct.
@@ -460,11 +462,11 @@ func visit(path string, di fs.DirEntry, err error) error {
 	return nil
 }
 
-func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logger) {
+func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logger) int {
 	outputDir := arguments["outputdir"].(string)
 	if err := os.MkdirAll(outputDir, os.ModeSticky|os.ModePerm); err != nil {
 		logger.Error().Msg(err.Error())
-		return
+		return 0
 	}
 	var waitGroup WaitGroupCount
 	// Right now, we are getting the base file name and attaching it to the output directory and using this as the output path for each file
@@ -472,10 +474,11 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	// 1 - Get directory of input file
 	// 2 - Split string by the logs dir to basically remove that - then we are left with remaining output dir
 	// 3 - mkdirall as needed
-	sizeTracker := Size{
-		inputSizeMBytes:  0,
-		outputSizeMBytes: 0,
-		mw:               sync.RWMutex{},
+	sizeTracker := SizeTracker{
+		inputSizeMBytes:      0,
+		outputSizeMBytes:     0,
+		actualFilesProcessed: 0,
+		mw:                   sync.RWMutex{},
 	}
 	jobTracker := runningJobs{
 		JobCount: 0,
@@ -484,11 +487,6 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	maxConcurrentFiles := arguments["concurrentfiles"].(int)
 
 	for _, file := range logFiles {
-		fileStat, ferr := os.Stat(file)
-		if ferr != nil {
-			continue
-		}
-		sizeTracker.AddBytes(int(fileStat.Size()/(1<<20)), 0)
 
 		base := strings.ToLower(filepath.Base(file))
 		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) {
@@ -537,9 +535,9 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	}
 	waitGroup.Wait()
 	logger.Info().Msg("Done Processing all Files!")
-	logger.Info().Msgf("Files Processed: %v", len(logFiles))
-	logger.Info().Msgf("Input Size (Megabytes): %v", sizeTracker.inputSizeMBytes)
-	logger.Info().Msgf("Output Size (Megabytes): %v", sizeTracker.outputSizeMBytes)
+	logger.Info().Msgf("Input SizeTracker (Megabytes): %v", sizeTracker.inputSizeMBytes)
+	logger.Info().Msgf("Output SizeTracker (Megabytes): %v", sizeTracker.outputSizeMBytes)
+	return sizeTracker.actualFilesProcessed
 }
 
 func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.Reader, writer *csv.Writer) (int, int, int, []string, error) {
@@ -729,7 +727,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	closeChannelWhenDone(recordChannel, &fileWG)
 }
 
-func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *Size, t *runningJobs) {
+func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *SizeTracker, t *runningJobs) {
 	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
 	defer t.SubJob()
 	defer waitGroup.Done()
@@ -752,7 +750,9 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		return
 	}
 	defer countryDB.Close()
+	fileProcessed := false
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
+		fileProcessed = true
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile)
 	} else if (strings.HasSuffix(strings.ToLower(inputFile), ".txt") || strings.HasSuffix(strings.ToLower(inputFile), ".log")) && arguments["convert"].(bool) {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
@@ -764,18 +764,24 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			return
 		}
 		if isIISorW3c {
+			fileProcessed = true
 			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile)
 			if err != nil {
 				logger.Error().Msg(err.Error())
 			}
 		}
 	}
-	fileStat, ferr := os.Stat(outputFile)
-	if ferr != nil {
-		return
+	if fileProcessed {
+		OfileStat, ferr := os.Stat(outputFile)
+		if ferr != nil {
+			return
+		}
+		IfileStat, ferr := os.Stat(inputFile)
+		if ferr != nil {
+			return
+		}
+		sizeTracker.AddBytes(int(IfileStat.Size()/(1<<20)), int(OfileStat.Size()/(1<<20)))
 	}
-
-	sizeTracker.AddBytes(0, int(fileStat.Size()/(1<<20)))
 }
 
 func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string) error {
@@ -1165,9 +1171,10 @@ func main() {
 		return
 	}
 	logger.Info().Msg("Starting Log Enrichment")
-	enrichLogs(arguments, logFiles, logger)
+	filesSuccessfullyProcessed := enrichLogs(arguments, logFiles, logger)
 	t := time.Now()
 	elapsed := t.Sub(start)
+	logger.Info().Msgf("Actual Files Processed: %v", filesSuccessfullyProcessed)
+	logger.Info().Msgf("Approximate Files per Second: %v", int(float64(filesSuccessfullyProcessed)/elapsed.Seconds()))
 	logger.Info().Msgf("Elapsed Time: %v seconds", elapsed.Seconds())
-
 }
