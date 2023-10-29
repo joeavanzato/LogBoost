@@ -1,6 +1,8 @@
 # log2geo
  
-log2geo is a command-line utility designed to enrich CSV files (primarily from Azure AD) with IP address ASN, Country and City information provided by MaxMind GeoLite2 DBs.
+log2geo is a command-line utility designed to enrich CSV files (primarily from Azure AD) with IP address ASN, Country and City information provided by MaxMind GeoLite2 DBs.  It is also possible to perform live reverse-lookups via DNS to find any domains associated with the enriched IP address.
+
+While originally intended to support Azure exports, it is possible to use this to enrich any CSV data containing an IP address column to provide
 
 The tool is also capable of enriching reverse-mapped domain names for each IP address detected in the source files.  It is also capable of parsing IIS/W3C log files.  KV style logs is in the TODO list.
 
@@ -24,7 +26,7 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -ipcol[string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
 -jsoncol[string] (default="AuditData") - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
 -flatten[bool] (default=false) - [TODO] - flatten a nested JSON structure into a CSV
--regex[bool] - [TODO] - scan each line for IP address matches via regex and outpute all results to CSV
+-regex[bool] (default=false) - [TODO] - scan each line for IP address matches via regex and outpute all results to CSV
 -convert[bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
   - IIS - Looks for #Fields and comma-delimited values
   - W3C - Looks for #Fields and space-delimited values
@@ -34,9 +36,10 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -dns[bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
 -maxgoperfile[int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
 -batchsize[int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
+-concurrentfiles[int] (default=1000) - Limit how many files are processed concurrently.
 ```
 
-## Example Usage
+### Example Usage
 ```
 log2geo.exe -logdir logs -api XXX
 log2geo.exe -logdir logs -dns -maxgoperfile 20 -batchsize 100 : Process each file with up to 20 goroutines handling 100 lines per routine (20,000 concurrently) and also enrich detected IP addresses with DNS lookups
@@ -45,5 +48,19 @@ log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory
 log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
 ```
 
+### TODOs
+* Add capability to 'flatten' JSON columns embedded within a CSV
+* Add JSON-logging parse capabilities 
+* Add KV parsing capabilities
+* Add ability to limit number of files processed concurrently
+* Add ability to specify multiple IP address column names when processing a variety of log types simultaneously.
+* Add 'raw regex' capability to parse the entire line for the first identified IP address pattern
+
+
 ### Performance Considerations
-log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, a minimum of 10,000 goroutines will be spawned.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. Realistically, this should not cause any issues on most modern machines - a machine with 4 GB of RAM is capable of easily handling ~1,000,000 goroutines - but now we have to take into account the files we are processing - this is where batchsize becomes important.  We must select a batchsize that is appropriate to both the data we are treating as well as the machine we are operating on - the defaults are typically good starting points to ensure work is processed efficiently but should be played with if performance is poor. 
+log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, a minimum of 10,000 goroutines will be spawned.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
+
+Realistically, this should not cause any issues on most modern machines - a machine with 4 GB of RAM is capable of easily handling ~1,000,000 goroutines - but now we have to take into account the files we are processing - this is where batchsize becomes important.  We must select a batchsize that is appropriate to both the data we are treating as well as the machine we are operating on - the defaults are typically good starting points to ensure work is processed efficiently but should be played with if performance is poor.
+
+Additionally, the -concurrentfiles flag can be used to limit the number of files processed concurrently - this defaults to 1,000 - together with -batchsize and -maxgoperfile the user can tweak the various concurrency settings associated with file processing to ensure performance and memory usage are suitable to the task and system at hand.
+
