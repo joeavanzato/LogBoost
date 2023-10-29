@@ -33,7 +33,7 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -delimiter[string] (default=" ") - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
 -dns[bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
 -maxgoperfile[int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
--batchsize[int] (default=50) - Limit how many lines per-file are sent to each spawned goroutine
+-batchsize[int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
 ```
 
 ## Example Usage
