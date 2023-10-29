@@ -67,6 +67,28 @@ type IPCache struct {
 	Proxy   bool
 }
 
+type runningJobs struct {
+	JobCount int
+	mw       sync.RWMutex
+}
+
+func (job *runningJobs) GetJobs() int {
+	job.mw.RLock()
+	defer job.mw.RUnlock()
+	return job.JobCount
+}
+func (job *runningJobs) AddJob() {
+	job.mw.Lock()
+	defer job.mw.Unlock()
+	job.JobCount += 1
+}
+func (job *runningJobs) SubJob() {
+	job.mw.Lock()
+	defer job.mw.Unlock()
+	job.JobCount -= 1
+}
+
+// TODO - Put lock and map in single struct.
 var IPCacheMap = make(map[string]IPCache)
 var IPCacheMapLock = sync.RWMutex{}
 
@@ -320,24 +342,28 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	regex := flag.Bool("regex", false, "[TODO] - If enabled, will use regex against the entire line to find the first IP address present to enrich")
 	convert := flag.Bool("convert", false, "If enabled, will check for additional .log or .txt files in the logs dir, convert them to an intermediate CSV and process as normal.  Capable of parsing IIS, W3C or k:v style logs - for k:v please provide separator value via '-separator' flag and delimiter as '-delimiter' flag.")
 	api := flag.String("api", "", "Provide your MaxMind API Key - if not provided, will check for environment variable 'MM_API' and then 'mm_api.txt' in cwd, in that order.")
-	separator := flag.String("separator", "=", "Use provided value as separator for KV logging.")
-	delimiter := flag.String("delimiter", ",", "Use provided value as KV delimiter for KV logging.")
+	separator := flag.String("separator", "=", "[TODO] Use provided value as separator for KV logging.")
+	delimiter := flag.String("delimiter", ",", "[TODO] Use provided value as KV delimiter for KV logging.")
 	dns := flag.Bool("dns", false, "[TODO] - If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
+	maxgoperfile := flag.Int("maxgoperfile", 10, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
+	batchsize := flag.Int("batchsize", 20, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
 	flag.Parse()
 
 	arguments := map[string]any{
-		"dbdir":      *dbDir,
-		"logdir":     *logDir,
-		"outputdir":  *outputDir,
-		"IPcolumn":   *column,
-		"JSONcolumn": *jsoncolumn,
-		"flatten":    *flatten,
-		"api":        *api,
-		"regex":      *regex,
-		"convert":    *convert,
-		"separator":  *separator,
-		"delimiter":  *delimiter,
-		"dns":        *dns,
+		"dbdir":        *dbDir,
+		"logdir":       *logDir,
+		"outputdir":    *outputDir,
+		"IPcolumn":     *column,
+		"JSONcolumn":   *jsoncolumn,
+		"flatten":      *flatten,
+		"api":          *api,
+		"regex":        *regex,
+		"convert":      *convert,
+		"separator":    *separator,
+		"delimiter":    *delimiter,
+		"dns":          *dns,
+		"maxgoperfile": *maxgoperfile,
+		"batchsize":    *batchsize,
 	}
 	return arguments
 }
@@ -525,7 +551,7 @@ func setupReadWrite(inputF *os.File, outputF *os.File) (*csv.Reader, *csv.Writer
 	return parser, writer, nil
 }
 
-func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.Reader, *csv.Writer, error) {
+func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.Reader, *csv.Writer, *os.File, error) {
 	inputF, err := openInput(inputFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -538,11 +564,12 @@ func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
-	return parser, writer, err
+	return parser, writer, outputF, err
 }
 
+// TODO - make sure files are being closed appropriately
 func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string) {
-	parser, writer, err := getNewPW(logger, inputFile, outputFile)
+	parser, writer, _, err := getNewPW(logger, inputFile, outputFile)
 	if err != nil {
 		return
 	}
@@ -553,14 +580,25 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		return
 	}
 
-	newParse, newWrite, err := getNewPW(logger, inputFile, outputFile)
+	newParse, newWrite, NewOutputF, err := getNewPW(logger, inputFile, outputFile)
 	if err != nil {
 		return
 	}
 
 	idx := 0
+	var fileWG WaitGroupCount
+	recordChannel := make(chan []string)
+	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
+	lineBatchSize := arguments["batchsize"].(int)
+	jobTracker := runningJobs{
+		JobCount: 0,
+		mw:       sync.RWMutex{},
+	}
+	records := make([][]string, 0)
+	go listenOnWritechannel(recordChannel, newWrite, logger, NewOutputF)
 	for {
 		record, err := newParse.Read()
+
 		if err == io.EOF {
 			break
 		}
@@ -576,6 +614,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			idx += 1
 			continue
 		}
+
 		if jsonColumn != -1 && arguments["flatten"].(bool) {
 			var d interface{}
 			err := json.Unmarshal([]byte(record[jsonColumn]), &d)
@@ -594,13 +633,38 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			}
 		}
 
-		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool))
-		err = newWrite.Write(record)
-		if err != nil {
-			logger.Error().Msg(err.Error())
+		records = append(records, record)
+		if len(records) <= lineBatchSize {
+			continue
+		} else {
+			if jobTracker.GetJobs() >= maxRoutinesPerFile {
+			waitForOthers:
+				for {
+					if jobTracker.GetJobs() >= maxRoutinesPerFile {
+						continue
+					} else {
+						fileWG.Add(1)
+						jobTracker.AddJob()
+						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+						break waitForOthers
+					}
+				}
+			} else {
+				fileWG.Add(1)
+				jobTracker.AddJob()
+				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+			}
+			records = nil
 		}
+
+		/*		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool))
+				err = newWrite.Write(record)
+				if err != nil {
+					logger.Error().Msg(err.Error())
+				}*/
 		idx += 1
 	}
+	closeChannelWhenDone(recordChannel, &fileWG)
 }
 
 func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount) {
@@ -657,7 +721,6 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 	if err != nil {
 		return err
 	}
-	defer outputF.Close()
 	writer := csv.NewWriter(outputF)
 	ipAddressColumn := -1
 	for i, v := range headers {
@@ -681,32 +744,96 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 	idx := 0
 	scanner := bufio.NewScanner(inputF)
 	// Limited to ~65k characters in a single line - won't work with crazy complex log types but should be fine for IIS/W3C
+	var fileWG WaitGroupCount
+	recordChannel := make(chan []string)
+	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
+	lineBatchSize := arguments["batchsize"].(int)
+	jobTracker := runningJobs{
+		JobCount: 0,
+		mw:       sync.RWMutex{},
+	}
+	records := make([][]string, 0)
+	go listenOnWritechannel(recordChannel, writer, logger, outputF)
 	for scanner.Scan() {
 		if idx == 0 {
 			idx += 1
 			continue
 		}
 		line := scanner.Text()
+		if len(line) == 0 {
+			break
+		}
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		record := strings.Split(line, delim)
-		if err := scanner.Err(); err == io.EOF {
+		scanErr := scanner.Err()
+		if scanErr == io.EOF {
+			fileWG.Add(1)
+			jobTracker.AddJob()
+			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
 			break
 		}
-		if err != nil {
-			logger.Error().Msg(err.Error())
-			return err
+		if scanErr != nil {
+			logger.Error().Msg(scanErr.Error())
+			return scanErr
 		}
-
-		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool))
-		err = writer.Write(record)
-		if err != nil {
-			logger.Error().Msg(err.Error())
+		record := strings.Split(line, delim)
+		records = append(records, record)
+		if len(records) <= lineBatchSize {
+			continue
+		} else {
+			if jobTracker.GetJobs() >= maxRoutinesPerFile {
+			waitForOthers:
+				for {
+					if jobTracker.GetJobs() >= maxRoutinesPerFile {
+						continue
+					} else {
+						fileWG.Add(1)
+						jobTracker.AddJob()
+						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+						break waitForOthers
+					}
+				}
+			} else {
+				fileWG.Add(1)
+				jobTracker.AddJob()
+				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+			}
+			records = nil
 		}
 		idx += 1
 	}
+	closeChannelWhenDone(recordChannel, &fileWG)
 	return nil
+}
+
+func closeChannelWhenDone(c chan []string, wg *WaitGroupCount) {
+	wg.Wait()
+	close(c)
+}
+
+func listenOnWritechannel(c chan []string, writer *csv.Writer, logger zerolog.Logger, outputF *os.File) {
+	defer outputF.Close()
+	for {
+		record, ok := <-c
+		if !ok {
+			break
+		} else {
+			err := writer.Write(record)
+			if err != nil {
+				logger.Error().Msg(err.Error())
+			}
+		}
+	}
+}
+
+func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs) {
+	defer waitGroup.Done()
+	defer tracker.SubJob()
+	for _, record := range records {
+		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS)
+		channel <- record
+	}
 }
 
 func checkIISorW3c(logger zerolog.Logger, inputFile string) (bool, []string, string, error) {
@@ -763,6 +890,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//return net.ParseIP(results["ClientIP"])
 }
 
+// TODO - Batch record processing to spawn multiple goroutines to handle the batch faster and return results.
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool) []string {
 	// ASN, Country, City, Proxy
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
