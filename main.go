@@ -88,6 +88,19 @@ func (job *runningJobs) SubJob() {
 	job.JobCount -= 1
 }
 
+type Size struct {
+	inputSizeMBytes  int
+	outputSizeMBytes int
+	mw               sync.RWMutex
+}
+
+func (s *Size) AddBytes(in int, out int) {
+	s.mw.Lock()
+	defer s.mw.Unlock()
+	s.inputSizeMBytes += in
+	s.outputSizeMBytes += out
+}
+
 // TODO - Put lock and map in single struct.
 var IPCacheMap = make(map[string]IPCache)
 var IPCacheMapLock = sync.RWMutex{}
@@ -457,8 +470,19 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	// 1 - Get directory of input file
 	// 2 - Split string by the logs dir to basically remove that - then we are left with remaining output dir
 	// 3 - mkdirall as needed
+	sizeTracker := Size{
+		inputSizeMBytes:  0,
+		outputSizeMBytes: 0,
+		mw:               sync.RWMutex{},
+	}
 
 	for _, file := range logFiles {
+		fileStat, ferr := os.Stat(file)
+		if ferr != nil {
+			continue
+		}
+		sizeTracker.AddBytes(int(fileStat.Size()/(1<<20)), 0)
+
 		base := strings.ToLower(filepath.Base(file))
 		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) {
 			continue
@@ -485,10 +509,12 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 
 		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
 		waitGroup.Add(1)
-		go processFile(arguments, inputFile, outputFile, logger, &waitGroup)
+		go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker)
 	}
 	waitGroup.Wait()
 	logger.Info().Msg("Done Processing all Files!")
+	logger.Info().Msgf("Input Size (Megabytes): %v", sizeTracker.inputSizeMBytes)
+	logger.Info().Msgf("Output Size (Megabytes): %v", sizeTracker.outputSizeMBytes)
 }
 
 func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.Reader, writer *csv.Writer) (int, int, int, []string, error) {
@@ -678,7 +704,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	closeChannelWhenDone(recordChannel, &fileWG)
 }
 
-func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount) {
+func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *Size) {
 	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
 	defer waitGroup.Done()
 
@@ -702,7 +728,6 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	defer countryDB.Close()
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile)
-		return
 	} else if (strings.HasSuffix(strings.ToLower(inputFile), ".txt") || strings.HasSuffix(strings.ToLower(inputFile), ".log")) && arguments["convert"].(bool) {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
 		// TODO - Parse IIS/W3C style logs -
@@ -717,9 +742,14 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			if err != nil {
 				logger.Error().Msg(err.Error())
 			}
-			return
 		}
 	}
+	fileStat, ferr := os.Stat(outputFile)
+	if ferr != nil {
+		return
+	}
+
+	sizeTracker.AddBytes(0, int(fileStat.Size()/(1<<20)))
 }
 
 func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string) error {
@@ -907,11 +937,17 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//return net.ParseIP(results["ClientIP"])
 }
 
-// TODO - Batch record processing to spawn multiple goroutines to handle the batch faster and return results.
+func isPrivateIP(ip net.IP) bool {
+	if tenDot.Contains(ip) || sevenTwoDot.Contains(ip) || oneNineTwoDot.Contains(ip) {
+		return true
+	}
+	return false
+}
+
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool) []string {
-	// ASN, Country, City, Proxy
+	// ASN, Country, City, Proxy, Domains
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
-	//ip := net.ParseIP("0.0.0.0")
+
 	ipString := ""
 	if ipAddressColumn != -1 {
 		//ip = net.ParseIP(record[ipAddressColumn])
@@ -928,12 +964,12 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		return record
 	}
 
-	if ipString == "" {
-		record = append(record, "", "", "", "", "")
+	ip := net.ParseIP(ipString)
+	if ip == nil {
+		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 		return record
 	}
-
-	if tenDot.Contains(net.ParseIP(ipString)) || sevenTwoDot.Contains(net.ParseIP(ipString)) || oneNineTwoDot.Contains(net.ParseIP(ipString)) {
+	if isPrivateIP(ip) {
 		record = append(record, "PrivateNet", "PrivateNet", "PrivateNet", "PrivateNet", "PrivateNet")
 		return record
 	}
@@ -952,11 +988,6 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 			City:    "",
 			Domain:  "",
 			Proxy:   false,
-		}
-		ip := net.ParseIP(ipString)
-		if ip == nil {
-			record = append(record, "", "", "", "", "")
-			return record
 		}
 		tmpCity := City{}
 		tmpAsn := ASN{}
@@ -991,6 +1022,8 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	}
 
 	if useDNS {
+		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
+		// TODO - Consider adding DomainCount column
 		records, dnsExists := CheckIPDNS(ipString)
 		baseDNS := ""
 		if dnsExists {
@@ -1109,6 +1142,6 @@ func main() {
 	enrichLogs(arguments, logFiles, logger)
 	t := time.Now()
 	elapsed := t.Sub(start)
-	logger.Info().Msgf("Execution Time: %v seconds", elapsed.Seconds())
+	logger.Info().Msgf("Elapsed Time: %v seconds", elapsed.Seconds())
 
 }
