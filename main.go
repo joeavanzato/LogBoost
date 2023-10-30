@@ -614,7 +614,7 @@ func setupReadWrite(inputF *os.File, outputF *os.File) (*csv.Reader, *csv.Writer
 	return parser, writer, nil
 }
 
-func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.Reader, *csv.Writer, *os.File, error) {
+func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.Reader, *csv.Writer, *os.File, *os.File, error) {
 	inputF, err := openInput(inputFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -627,23 +627,24 @@ func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
-	return parser, writer, outputF, err
+	return parser, writer, inputF, outputF, err
 }
 
 // TODO - make sure files are being closed appropriately
 func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string) {
-	parser, writer, _, err := getNewPW(logger, inputFile, outputFile)
+	parser, writer, inputF1, _, err := getNewPW(logger, inputFile, outputFile)
+	defer inputF1.Close()
 	if err != nil {
 		return
 	}
-
 	ipAddressColumn, jsonColumn, newHeaderCount, headers, err := setupHeaders(logger, arguments, parser, writer)
 	if err != nil {
 		logger.Error().Msgf("Error Processing File: %v", err.Error())
 		return
 	}
 
-	newParse, newWrite, NewOutputF, err := getNewPW(logger, inputFile, outputFile)
+	newParse, newWrite, NewInputF, NewOutputF, err := getNewPW(logger, inputFile, outputFile)
+	defer NewInputF.Close()
 	if err != nil {
 		return
 	}
@@ -787,10 +788,10 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 
 func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string) error {
 	inputF, err := openInput(inputFile)
+	defer inputF.Close()
 	if err != nil {
 		return err
 	}
-	defer inputF.Close()
 	outputF, err := createOutput(outputFile)
 	if err != nil {
 		return err
