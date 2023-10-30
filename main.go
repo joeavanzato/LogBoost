@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/oschwald/maxminddb-golang"
@@ -398,7 +399,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	return arguments
 }
 
-func setAPIUrls(arguments map[string]any, logger zerolog.Logger) {
+func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 	apiKey := ""
 	if arguments["api"].(string) == "" {
 		logger.Info().Msg("API Key not provided at command line - checking for ENV VAR")
@@ -412,7 +413,6 @@ func setAPIUrls(arguments map[string]any, logger zerolog.Logger) {
 			_, err := os.Stat("mm_api.txt")
 			if os.IsNotExist(err) {
 				logger.Error().Msgf("Could not find mm_api.txt - downloads not possible.")
-				return
 			}
 			logger.Info().Msgf("Found mm_api.txt")
 			apiKey = ReadFileToSlice("mm_api.txt", logger)[0]
@@ -422,8 +422,8 @@ func setAPIUrls(arguments map[string]any, logger zerolog.Logger) {
 		apiKey = arguments["api"].(string)
 	}
 	if apiKey == "" {
-		logger.Error().Msg("Could not find valid API Key")
-		return
+		logger.Error().Msg("Could not find valid MaxMind API Key")
+		return errors.New("Could not find valid MaxMind API Key")
 	}
 	geoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=%v&suffix=tar.gz", apiKey)
 	geoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%v&suffix=tar.gz", apiKey)
@@ -432,6 +432,7 @@ func setAPIUrls(arguments map[string]any, logger zerolog.Logger) {
 	maxMindURLs["ASN"] = geoLiteASNDBURL
 	maxMindURLs["City"] = geoLiteCityDBURL
 	maxMindURLs["Country"] = geoLiteCountryDBURL
+	return nil
 }
 
 var logsToProcess = make([]string, 0)
@@ -756,7 +757,6 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile)
 	} else if (strings.HasSuffix(strings.ToLower(inputFile), ".txt") || strings.HasSuffix(strings.ToLower(inputFile), ".log")) && arguments["convert"].(bool) {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
-		// TODO - Parse IIS/W3C style logs -
 		// 1 - Check if file is IIS/W3C Log and Handle
 		// 2 - If not (missing Fields# line - then assume it is some type of kv logging and use known separator/delimiter to parse out records
 		isIISorW3c, fields, delim, err := checkIISorW3c(logger, inputFile)
@@ -770,6 +770,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				logger.Error().Msg(err.Error())
 			}
 		}
+		// Add KV style parsing logic here or whatever other methods.
 	}
 	if fileProcessed {
 		OfileStat, ferr := os.Stat(outputFile)
@@ -916,6 +917,9 @@ func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.R
 }
 
 func checkIISorW3c(logger zerolog.Logger, inputFile string) (bool, []string, string, error) {
+	// Determines if a file appears to be an IIS/W3C format log by checking for a line starting with #fields within the first 8 lines of the file
+	// If yes, returns the headers and detected delimiter - delimiter is identified by splitting the #fields line with a " " separator - if the length of the resulting slice is 2, this means there is only one space in the line aka the delimiter is commas
+	// If the slice length is not 2, most likely we are dealing with a comma delimiter
 	f, err := os.Open(inputFile)
 	defer f.Close()
 	fields := make([]string, 0)
@@ -1164,7 +1168,10 @@ func main() {
 	start := time.Now()
 	logger := setupLogger()
 	arguments := parseArgs(logger)
-	setAPIUrls(arguments, logger)
+	APIerr := setAPIUrls(arguments, logger)
+	if APIerr != nil {
+		return
+	}
 	findOrGetDBs(arguments, logger)
 	logFiles, err := findLogsToProcess(arguments, logger)
 	if err != nil {
