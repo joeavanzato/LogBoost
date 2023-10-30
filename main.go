@@ -28,8 +28,6 @@ import (
 
 const logFile = "log2geo.log"
 
-type anyMap map[string]interface{}
-
 var geoLiteASNDBURL = ""
 var geoLiteCityDBURL = ""
 var geoLiteCountryDBURL = ""
@@ -68,6 +66,7 @@ type IPCache struct {
 	Proxy   bool
 }
 
+// Used to help keep track of jobs in a WaitGroup
 type runningJobs struct {
 	JobCount int
 	mw       sync.RWMutex
@@ -89,6 +88,7 @@ func (job *runningJobs) SubJob() {
 	job.JobCount -= 1
 }
 
+// Used to track overall data size processed by the script - accessed by multiple goroutines concurrently so we make it threadsafe
 type SizeTracker struct {
 	inputSizeMBytes      int
 	outputSizeMBytes     int
@@ -104,7 +104,11 @@ func (s *SizeTracker) AddBytes(in int, out int) {
 	s.actualFilesProcessed += 1
 }
 
-// TODO - Put lock and map in single struct.
+// Used in func visit to add log paths as we crawl the input directory
+var logsToProcess = make([]string, 0)
+
+// TODO - Put lock and map in single struct for organization - then refactor CheckIP and AddIP to just take the original cachemap struct
+// TODO - Refactor to have domains be a part of the IPStruct when building this out in a more logical manner
 var IPCacheMap = make(map[string]IPCache)
 var IPCacheMapLock = sync.RWMutex{}
 
@@ -121,6 +125,7 @@ func AddIP(ip string, ipcache IPCache) {
 	IPCacheMap[ip] = ipcache
 }
 
+// TODO - Put lock and map in single struct for organization - then refactor CheckIPDNS and AddIPDNS to just take the original cachemap struct
 var DNSCacheMap = make(map[string][]string)
 var DNSCacheMapLock = sync.RWMutex{}
 
@@ -137,6 +142,8 @@ func AddIPDNS(ip string, records []string) {
 	DNSCacheMap[ip] = records
 }
 
+// Should probably get rid of all of the below since it really isn't necessary now that we are using the jobs tracker instead of this to limit concurrency maxes
+// ////
 type WaitGroupCount struct {
 	sync.WaitGroup
 	count int64
@@ -155,6 +162,8 @@ func (wg *WaitGroupCount) Done() {
 func (wg *WaitGroupCount) GetCount() int {
 	return int(atomic.LoadInt64(&wg.count))
 }
+
+// ////
 
 // https://github.com/oschwald/geoip2-golang/blob/main/reader.go
 // TODO - Review potential MaxMind fields to determine usefulness of any others - really depends on the 'type' of DB we have access to
@@ -435,8 +444,6 @@ func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 	return nil
 }
 
-var logsToProcess = make([]string, 0)
-
 func findLogsToProcess(arguments map[string]any, logger zerolog.Logger) ([]string, error) {
 	logDir := arguments["logdir"].(string)
 	logger.Info().Msgf("Checking for Log Files at Path: %v", logDir)
@@ -484,9 +491,11 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	maxConcurrentFiles := arguments["concurrentfiles"].(int)
 
 	for _, file := range logFiles {
-
+		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
 		base := strings.ToLower(filepath.Base(file))
 		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) {
+			// If the file is not a CSV and we have not specified 'convert' argument, skip it.
+			// TODO - Should this just be default?
 			continue
 		}
 		inputFile := file
@@ -499,7 +508,6 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 		} else {
 			outputPath = outputDir
 		}
-
 		err := os.MkdirAll(outputPath, os.ModePerm)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -626,7 +634,6 @@ func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.
 	return parser, writer, inputF, outputF, err
 }
 
-// TODO - make sure files are being closed appropriately
 func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string) {
 	parser, writer, inputF1, _, err := getNewPW(logger, inputFile, outputFile)
 	defer inputF1.Close()
@@ -979,7 +986,7 @@ func isPrivateIP(ip net.IP, ipstring string) bool {
 }
 
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool) []string {
-	// ASN, Country, City, Proxy, Domains
+	// Columns this function should append to input record (in order): ASN, Country, City, Proxy, Domains
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 
 	ipString := ""
