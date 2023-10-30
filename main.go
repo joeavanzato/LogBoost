@@ -470,11 +470,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 		return 0
 	}
 	var waitGroup WaitGroupCount
-	// Right now, we are getting the base file name and attaching it to the output directory and using this as the output path for each file
-	// Instead, I want to find the dir structure from the input file and recreate as appropriate for each source file.
-	// 1 - Get directory of input file
-	// 2 - Split string by the logs dir to basically remove that - then we are left with remaining output dir
-	// 3 - mkdirall as needed
+
 	sizeTracker := SizeTracker{
 		inputSizeMBytes:      0,
 		outputSizeMBytes:     0,
@@ -974,10 +970,11 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//return net.ParseIP(results["ClientIP"])
 }
 
-func isPrivateIP(ip net.IP) bool {
-	if tenDot.Contains(ip) || sevenTwoDot.Contains(ip) || oneNineTwoDot.Contains(ip) {
+func isPrivateIP(ip net.IP, ipstring string) bool {
+	if tenDot.Contains(ip) || sevenTwoDot.Contains(ip) || oneNineTwoDot.Contains(ip) || ipstring == "127.0.0.1" || ipstring == "::" || ipstring == "::1" || ipstring == "0.0.0.0" {
 		return true
 	}
+
 	return false
 }
 
@@ -1006,7 +1003,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 		return record
 	}
-	if isPrivateIP(ip) {
+	if isPrivateIP(ip, ipString) {
 		record = append(record, "PrivateNet", "PrivateNet", "PrivateNet", "PrivateNet", "PrivateNet")
 		return record
 	}
@@ -1166,6 +1163,7 @@ func lookupIPRecords(ip string) []string {
 }
 
 func main() {
+	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
 	start := time.Now()
 	logger := setupLogger()
 	arguments := parseArgs(logger)
