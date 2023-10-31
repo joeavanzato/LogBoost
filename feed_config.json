@@ -1,0 +1,318 @@
+
+{
+	"feeds": [
+		{
+			"name": "alienvault_reputation_generic",
+			"url": "https://reputation.alienvault.com/reputation.generic",
+			"type": "suspicious"
+		},
+		{
+			"name": "binarydefense_banlist",
+			"url": "https://www.binarydefense.com/banlist.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "botvirij_src_ip",
+			"url": "https://www.botvrij.eu/data/ioclist.ip-src",
+			"type": "suspicious"
+		},
+		{
+			"name": "botvirij_dst_ip",
+			"url": "https://www.botvrij.eu/data/ioclist.ip-dst",
+			"type": "suspicious"
+		},
+		{
+			"name": "cinsscore_badguys",
+			"url": "http://cinsscore.com/list/ci-badguys.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dan_me_torlist",
+			"url": "https://www.dan.me.uk/torlist/",
+			"type": "tor"
+		},
+		{
+			"name": "danger_rulez_blocklist",
+			"url": "https://danger.rulez.sk/projects/bruteforceblocker/blist.php",
+			"type": "suspicious"
+		}
+		,
+		{
+			"name": "darklist_blocklist",
+			"url": "https://www.darklist.de/raw.php",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_21",
+			"url": "https://lists.blocklist.de/lists/21.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_22",
+			"url": "https://lists.blocklist.de/lists/22.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_25",
+			"url": "https://lists.blocklist.de/lists/25.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_80",
+			"url": "https://lists.blocklist.de/lists/80.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_110",
+			"url": "https://lists.blocklist.de/lists/110.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_143",
+			"url": "https://lists.blocklist.de/lists/143.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_443",
+			"url": "https://lists.blocklist.de/lists/443.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_993",
+			"url": "https://lists.blocklist.de/lists/993.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_bruteforce",
+			"url": "https://lists.blocklist.de/lists/bruteforcelogin.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_de_bots",
+			"url": "https://lists.blocklist.de/lists/bots.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "emergingthreats_compromised_ips",
+			"url": "https://rules.emergingthreats.net/blockrules/compromised-ips.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "feodotracker_abusech_botnet",
+			"url": "https://feodotracker.abuse.ch/downloads/ipblocklist.json",
+			"type": "suspicious"
+		},
+		{
+			"name": "3coresec_bruteforce_ssh",
+			"url": "https://blacklist.3coresec.net/lists/ssh.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "3coresec_http_attacks",
+			"url": "https://blacklist.3coresec.net/lists/http.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "3coresec_scan_exploit",
+			"url": "https://blacklist.3coresec.net/lists/misc.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "threatview_cobaltstrike_confident",
+			"url": "https://threatview.io/Downloads/High-Confidence-CobaltStrike-C2%20-Feeds.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "threatview_osint_pastebin_twitter",
+			"url": "https://threatview.io/Downloads/Experimental-IOC-Tweets.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "threatview_ip_blocklist_confident",
+			"url": "https://threatview.io/Downloads/IP-High-Confidence-Feed.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "blocklist_net_ua_firehol_ip",
+			"url": "https://iplists.firehol.org/files/blocklist_net_ua.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "botscout_firehol_30d",
+			"url": "https://iplists.firehol.org/files/botscout_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "cleantalk_firehol_30d",
+			"url": "https://iplists.firehol.org/files/cleantalk_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "firehol_abusers_30d",
+			"url": "https://iplists.firehol.org/files/firehol_abusers_30d.netset",
+			"type": "suspicious"
+		},
+		{
+			"name": "ipfinder_firehol_30d",
+			"url": "https://iplists.firehol.org/files/ipblacklistcloud_recent_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "danmeuk_firehol_tor",
+			"url": "https://iplists.firehol.org/files/dm_tor.ipset",
+			"type": "tor"
+		},
+		{
+			"name": "emerging_firehol_tor",
+			"url": "https://iplists.firehol.org/files/et_tor.ipset",
+			"type": "tor"
+		},
+		{
+			"name": "proxylists_firehol_30d",
+			"url": "https://iplists.firehol.org/files/proxylists_30d.ipset",
+			"type": "proxy"
+		},
+		{
+			"name": "proxz_firehol_30d",
+			"url": "https://iplists.firehol.org/files/proxz_30d.ipset",
+			"type": "proxy"
+		},
+		{
+			"name": "socksproxy_firehol_30d",
+			"url": "https://iplists.firehol.org/files/socks_proxy_30d.ipset",
+			"type": "proxy"
+		},
+		{
+			"name": "sslproxy_firehol_30d",
+			"url": "https://iplists.firehol.org/files/sslproxies_30d.ipset",
+			"type": "proxy"
+		},
+		{
+			"name": "torexits_firehol_30d",
+			"url": "https://iplists.firehol.org/files/tor_exits_30d.ipset",
+			"type": "tor"
+		},
+		{
+			"name": "xroxy_firehol_30d",
+			"url": "https://iplists.firehol.org/files/xroxy_30d.ipset",
+			"type": "proxy"
+		},
+		{
+			"id": "50",
+			"name": "greensnow_firehol",
+			"org": "GreenSnow",
+			"url": "https://iplists.firehol.org/files/greensnow.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "cybercrime_firehol",
+			"url": "https://iplists.firehol.org/files/cybercrime.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "vxvault_firehol_recent",
+			"url": "https://iplists.firehol.org/files/vxvault.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "bitnodes_firehol_30d",
+			"url": "https://iplists.firehol.org/files/bitcoin_nodes_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "binarydefense_firehol_recent",
+			"url": "https://iplists.firehol.org/files/bds_atif.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "php_firehol_dictionary_30d",
+			"url": "https://iplists.firehol.org/files/php_dictionary_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "php_firehol_harvesters_30d",
+			"url": "https://iplists.firehol.org/files/php_harvesters_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "php_firehol_spammers_30d",
+			"url": "https://iplists.firehol.org/files/php_spammers_30d.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "hoshsadiq_github_mining",
+			"url": "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "kriskintel_malicious_ips",
+			"url": "https://kriskintel.com/feeds/ktip_malicious_Ips.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "myip_blocklist_latest",
+			"url": "https://myip.ms/files/blacklist/htaccess/latest_blacklist.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "rutgers_attackers_feed",
+			"url": "https://report.rutgers.edu/DROP/attackers",
+			"type": "suspicious"
+		},
+		{
+			"name": "scriptzteam_github_badips",
+			"url": "https://raw.githubusercontent.com/scriptzteam/badIPS/main/ips.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "secops_github_tornodes",
+			"url": "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-nodes.lst",
+			"type": "suspicious"
+		},
+		{
+			"name": "secops_github_torexitnodes",
+			"url": "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst",
+			"type": "suspicious"
+		},
+		{
+			"name": "sekuripy_ssh_bruteforce",
+			"url": "http://sekuripy.hr/blacklist.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "turris_greylist_latest",
+			"url": "https://view.sentinel.turris.cz/greylist-data/greylist-latest.csv",
+			"type": "suspicious"
+		},
+		{
+			"name": "stamparm_github_level3_up",
+			"url": "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "talos_blocklist",
+			"url": "https://www.talosintelligence.com/documents/ip-blacklist",
+			"type": "suspicious"
+		},
+		{
+			"name": "charles_thehaleys_ssh_attack",
+			"url": "https://charles.the-haleys.org/ssh_dico_attack_with_timestamps.php?days=30",
+			"type": "suspicious"
+		},
+		{
+			"name": "alienvault_reputation",
+			"url": "https://reputation.alienvault.com/reputation.data",
+			"type": "suspicious"
+		},
+		{
+			"name": "torproject_exit_nodes",
+			"url": "https://check.torproject.org/torbulkexitlist",
+			"type": "tor"
+		},
+		{
+			"name": "threatfox_abusech_recent_ip",
+			"url": "https://threatfox.abuse.ch/export/csv/ip-port/recent/",
+			"type": "suspicious"
+		}
+	]
+}
