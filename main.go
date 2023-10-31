@@ -68,7 +68,6 @@ type IPCache struct {
 	Country string
 	City    string
 	Domain  string
-	Proxy   bool
 }
 
 // Used to help keep track of jobs in a WaitGroup
@@ -197,7 +196,7 @@ func (wg *WaitGroupCount) GetCount() int {
 
 // ////
 
-var geoFields = []string{"_ASN", "_Country", "_City", "Proxy", "Domains", "TORExit"}
+var geoFields = []string{"_ASN", "_Country", "_City", "Domains", "THREATCAT"}
 
 // https://github.com/oschwald/geoip2-golang/blob/main/reader.go
 // TODO - Review potential MaxMind fields to determine usefulness of any others - really depends on the 'type' of DB we have access to
@@ -534,7 +533,12 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 		mw:       sync.RWMutex{},
 	}
 	maxConcurrentFiles := arguments["concurrentfiles"].(int)
+	tempArgs := make(map[string]any)
 
+	if useIntel {
+		db, _ := sql.Open("sqlite3", threatDBFile)
+		tempArgs["db"] = db
+	}
 	for _, file := range logFiles {
 		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
 		base := strings.ToLower(filepath.Base(file))
@@ -572,14 +576,14 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 				} else {
 					jobTracker.AddJob()
 					waitGroup.Add(1)
-					go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker, &jobTracker)
+					go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker, &jobTracker, tempArgs)
 					break waitForOthers
 				}
 			}
 		} else {
 			jobTracker.AddJob()
 			waitGroup.Add(1)
-			go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker, &jobTracker)
+			go processFile(arguments, inputFile, outputFile, logger, &waitGroup, &sizeTracker, &jobTracker, tempArgs)
 		}
 
 	}
@@ -678,7 +682,7 @@ func getNewPW(logger zerolog.Logger, inputFile string, outputFile string) (*csv.
 	return parser, writer, inputF, outputF, err
 }
 
-func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string) {
+func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) {
 	parser, writer, inputF1, _, err := getNewPW(logger, inputFile, outputFile)
 	defer inputF1.Close()
 	if err != nil {
@@ -756,14 +760,14 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 			}
 			records = nil
 		}
@@ -771,12 +775,12 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 	records = nil
 	closeChannelWhenDone(recordChannel, &fileWG)
 }
 
-func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *SizeTracker, t *runningJobs) {
+func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *SizeTracker, t *runningJobs, tempArgs map[string]any) {
 	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
 	defer t.SubJob()
 	defer waitGroup.Done()
@@ -802,7 +806,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	fileProcessed := false
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
 		fileProcessed = true
-		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile)
+		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 	} else if (strings.HasSuffix(strings.ToLower(inputFile), ".txt") || strings.HasSuffix(strings.ToLower(inputFile), ".log")) && arguments["convert"].(bool) {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
 		// 1 - Check if file is IIS/W3C Log and Handle
@@ -813,7 +817,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		}
 		if isIISorW3c {
 			fileProcessed = true
-			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile)
+			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
 				logger.Error().Msg(err.Error())
 			}
@@ -833,7 +837,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	}
 }
 
-func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string) error {
+func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
@@ -894,7 +898,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 			records = nil
 			break
 		}
@@ -915,14 +919,14 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 			}
 			records = nil
 		}
@@ -931,7 +935,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	return nil
 }
@@ -957,11 +961,11 @@ func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger,
 	}
 }
 
-func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs) {
+func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any) {
 	defer waitGroup.Done()
 	defer tracker.SubJob()
 	for _, record := range records {
-		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS)
+		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS, tempArgs)
 		channel <- record
 	}
 }
@@ -1031,8 +1035,8 @@ func isPrivateIP(ip net.IP, ipstring string) bool {
 	return false
 }
 
-func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool) []string {
-	// Columns this function should append to input record (in order): ASN, Country, City, Proxy, Domains
+func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, tempArgs map[string]any) []string {
+	// Columns this function should append to input record (in order): ASN, Country, City, Domains, TOR, SUSPICIOUS, PROXY
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 
 	ipString := ""
@@ -1046,27 +1050,24 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		//ip = findClientIP(logger, record[jsonColumn])
 		// TODO
 	} else {
-		// Could not identify which a column storing IP address column or JSON blob
-		record = append(record, "", "", "", "", "")
+		// Could not identify which a column storing IP address column or JSON blob and not using regex to find an IP
+		record = append(record, "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
 
 	ip := net.ParseIP(ipString)
 	if ip == nil {
-		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 		return record
 	}
 	if isPrivateIP(ip, ipString) {
-		record = append(record, "PVT", "PVT", "PVT", "PVT", "PVT", "PVT")
+		record = append(record, "PVT", "PVT", "PVT", "PVT", "PVT")
 		return record
 	}
 
 	ipStruct, IPCacheExists := CheckIP(ipString)
 	if IPCacheExists {
-		if ipStruct.Proxy {
-			record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, "true")
-		}
-		record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, "false")
+		record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City)
 	}
 	if !IPCacheExists {
 		ipTmpStruct := IPCache{
@@ -1074,7 +1075,6 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 			Country: "",
 			City:    "",
 			Domain:  "",
-			Proxy:   false,
 		}
 		tmpCity := City{}
 		tmpAsn := ASN{}
@@ -1090,20 +1090,11 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		if err != nil {
 			ipTmpStruct.Country = ""
 			ipTmpStruct.City = ""
-			ipTmpStruct.Proxy = false
-			record = append(record, "", "", "")
+			record = append(record, "", "")
 		} else {
-			anon := ""
-			if tmpCity.Traits.IsAnonymousProxy {
-				anon = "true"
-				ipTmpStruct.Proxy = true
-			} else {
-				anon = "false"
-				ipTmpStruct.Proxy = false
-			}
 			ipTmpStruct.Country = tmpCity.Country.Names["en"]
 			ipTmpStruct.City = tmpCity.City.Names["en"]
-			record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"], anon)
+			record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"])
 		}
 		AddIP(ipString, ipTmpStruct)
 	}
@@ -1132,17 +1123,67 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, "")
 	}
 
-	if doTorEnrich {
-		if CheckTor(ipString) {
-			record = append(record, "TRUE")
+	/*	if doTorEnrich {
+			if CheckTor(ipString) {
+				record = append(record, "TRUE")
+			} else {
+				record = append(record, "FALSE")
+			}
 		} else {
-			record = append(record, "FALSE")
+			record = append(record, "")
+		}*/
+	if useIntel {
+		matchType, exists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
+		if DBError != nil {
+			record = append(record, "NA")
+		} else if exists {
+			if matchType == "tor" {
+				record = append(record, "TOR")
+			} else if matchType == "suspicious" {
+				record = append(record, "SUSPICIOUS")
+			} else if matchType == "proxy" {
+				record = append(record, "PROXY")
+			}
+		} else {
+			record = append(record, "NONE")
 		}
 	} else {
-		record = append(record, "")
+		record = append(record, "NA")
 	}
 
 	return record
+}
+
+func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
+	query := fmt.Sprintf("select category from ips where ip = \"%v\"", ip)
+	/*	stmt, err := db.Prepare(query)
+		if err != nil {
+			return "", false
+		}
+		defer stmt.Close()
+		r, err := stmt.Exec()
+		if err != nil {
+			return "", false
+		}*/
+	rows, err := db.Query(query)
+	if err != nil {
+		return "", false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var iptype string
+		err = rows.Scan(&iptype)
+		if err != nil {
+			return "", false, err
+		}
+		return iptype, true, nil
+	}
+	err = rows.Err()
+	if err != nil {
+		return "", false, err
+	}
+
+	return "", false, err
 }
 
 func ReadFileToSlice(filename string, logger zerolog.Logger) []string {
@@ -1226,9 +1267,8 @@ func lookupIPRecords(ip string) []string {
 	return records
 }
 
-// TODO
 func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
-	// TODO
+	// TODO - Actually implement this
 	logger.Info().Msg("Combining Outputs per Directory")
 	files, err := os.ReadDir(arguments["outputdir"].(string))
 	if err != nil {
@@ -1242,6 +1282,7 @@ func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 }
 
 func makeTorList(arguments map[string]any, logger zerolog.Logger) {
+	// Deprecated now that we are pulling more holistically
 	_, err := os.Stat(torExitNodeFile)
 	if errors.Is(err, os.ErrNotExist) {
 		err2 := downloadFile(logger, torExitNodeURL, torExitNodeFile, "")
@@ -1270,7 +1311,7 @@ func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 	// type values: proxy, suspicious, tor
 	_, err := os.Stat(threatDBFile)
 	if errors.Is(err, os.ErrNotExist) {
-		initErrr := initializeThreatDB(arguments, logger)
+		initErrr := initializeThreatDB(logger)
 		if initErrr != nil {
 			return initErrr
 		}
@@ -1291,14 +1332,14 @@ func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 	}
 
 	if arguments["updateti"].(bool) {
-		UpdateErr := updateIntelligence(arguments, logger, feeds)
+		UpdateErr := updateIntelligence(logger, feeds)
 		if UpdateErr != nil {
 			return UpdateErr
 		}
 	}
 
 	// Now we have downloaded intel to intelDir - lets go through each file and parse for ipAddress hits within each file - we will use the filename to tell us what 'type' the data should be categorized as
-	ingestErr := ingestIntel(arguments, logger, feeds)
+	ingestErr := ingestIntel(logger, feeds)
 	if ingestErr != nil {
 		return ingestErr
 	}
@@ -1307,7 +1348,7 @@ func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 	return nil
 }
 
-func updateIntelligence(arguments map[string]any, logger zerolog.Logger, feeds Feeds) error {
+func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 	// Iterate through feeds and downloads each file as $FEEDNAME_TIMESTAMP.txt into newly created 'intel' directory if it does not exist
 	if err := os.Mkdir(intelDir, 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		logger.Error().Msg(err.Error())
@@ -1324,7 +1365,7 @@ func updateIntelligence(arguments map[string]any, logger zerolog.Logger, feeds F
 	return nil
 }
 
-func initializeThreatDB(arguments map[string]any, logger zerolog.Logger) error {
+func initializeThreatDB(logger zerolog.Logger) error {
 	file, CreateErr := os.Create(threatDBFile) // Create SQLite file
 	if CreateErr != nil {
 		logger.Error().Msg(CreateErr.Error())
@@ -1333,7 +1374,7 @@ func initializeThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 	file.Close()
 	db, _ := sql.Open("sqlite3", threatDBFile)
 	defer db.Close()
-	createTableStatement := `CREATE TABLE ips ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "ip" TEXT, "type" TEXT, "url" TEXT, UNIQUE(ip));`
+	createTableStatement := `CREATE TABLE ips ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "ip" TEXT, "category" TEXT, "url" TEXT, UNIQUE(ip));`
 	_, exeE := db.Exec(createTableStatement)
 	if exeE != nil {
 		logger.Error().Msg(CreateErr.Error())
@@ -1342,7 +1383,7 @@ func initializeThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 	return nil
 }
 
-func ingestIntel(arguments map[string]any, logger zerolog.Logger, feeds Feeds) error {
+func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	typeMap := make(map[string]string)
 	urlMap := make(map[string]string)
 	db, _ := sql.Open("sqlite3", threatDBFile)
@@ -1371,7 +1412,7 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare("insert or ignore into ips(ip, type, url) values(?, ?, ?)")
+	stmt, err := tx.Prepare("insert or ignore into ips(ip, category, url) values(?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -1383,7 +1424,7 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		}
 		v, e := regexFirstIPFromString(lineTrimmed)
 		if e {
-			_, err = stmt.Exec(v, url, iptype)
+			_, err = stmt.Exec(v, iptype, url)
 			if err != nil {
 				return err
 			}
@@ -1419,13 +1460,20 @@ func main() {
 	start := time.Now()
 	logger := setupLogger()
 	arguments := parseArgs(logger)
-	if arguments["buildti"].(bool) || arguments["useti"].(bool) || arguments["updateti"].(bool) {
+	if arguments["buildti"].(bool) || arguments["updateti"].(bool) {
 		TIBuildErr := buildThreatDB(arguments, logger)
 		if TIBuildErr != nil {
 			return
 		}
 	}
-	return
+	if arguments["useti"].(bool) {
+		_, err := os.Stat(threatDBFile)
+		if errors.Is(err, os.ErrNotExist) {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		useIntel = true
+	}
 	makeTorList(arguments, logger)
 	APIerr := setAPIUrls(arguments, logger)
 	if APIerr != nil {
