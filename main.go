@@ -108,6 +108,7 @@ func (s *SizeTracker) AddBytes(in int, out int) {
 	s.actualFilesProcessed += 1
 }
 
+// This set of args is now deprecated since we are pulling down tor nodes/exit nodes as part of the -buildti, -updateti, -useti sequence of arguments
 var torExitNodeURL = "https://www.dan.me.uk/torlist/?exit"
 var torExitNodeFile = "tor_exit_nodes.txt"
 var torNodeMap = make(map[string]struct{})
@@ -1040,6 +1041,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 
 	ipString := ""
+	var exists bool
 	if ipAddressColumn != -1 {
 		//ip = net.ParseIP(record[ipAddressColumn])
 		ipString = record[ipAddressColumn]
@@ -1048,7 +1050,11 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		ipString = findClientIP(logger, record[jsonColumn])
 	} else if useRegex {
 		//ip = findClientIP(logger, record[jsonColumn])
-		// TODO
+		ipString, exists = regexFirstIPFromString(strings.Join(record, " "))
+		if !exists {
+			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+			return record
+		}
 	} else {
 		// Could not identify which a column storing IP address column or JSON blob and not using regex to find an IP
 		record = append(record, "NA", "NA", "NA", "NA", "NA")
@@ -1133,10 +1139,10 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 			record = append(record, "")
 		}*/
 	if useIntel {
-		matchType, exists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
+		matchType, TIexists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
 		if DBError != nil {
 			record = append(record, "NA")
-		} else if exists {
+		} else if TIexists {
 			if matchType == "tor" {
 				record = append(record, "TOR")
 			} else if matchType == "suspicious" {
@@ -1474,7 +1480,7 @@ func main() {
 		}
 		useIntel = true
 	}
-	makeTorList(arguments, logger)
+	//makeTorList(arguments, logger)
 	APIerr := setAPIUrls(arguments, logger)
 	if APIerr != nil {
 		return

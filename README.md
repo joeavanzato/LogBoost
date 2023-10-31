@@ -26,7 +26,7 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -ipcol[string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
 -jsoncol[string] (default="AuditData") - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
 -flatten[bool] (default=false) - [TODO] - flatten a nested JSON structure into a CSV
--regex[bool] (default=false) - [TODO] - scan each line for IP address matches via regex and outpute all results to CSV
+-regex[bool] (default=false) - Scan each line for first IP address matche via regex rather than specifying a specific column name.
 -convert[bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
   - IIS - Looks for #Fields and comma-delimited values
   - W3C - Looks for #Fields and space-delimited values
