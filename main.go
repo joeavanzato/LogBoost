@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -402,7 +403,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	api := flag.String("api", "", "Provide your MaxMind API Key - if not provided, will check for environment variable 'MM_API' and then 'mm_api.txt' in cwd, in that order.")
 	separator := flag.String("separator", "=", "[TODO] Use provided value as separator for KV logging.")
 	delimiter := flag.String("delimiter", ",", "[TODO] Use provided value as KV delimiter for KV logging.")
-	dns := flag.Bool("dns", false, "[TODO] - If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
+	dns := flag.Bool("dns", false, "If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
 	maxgoperfile := flag.Int("maxgoperfile", 20, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
 	batchsize := flag.Int("batchsize", 100, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
 	concurrentfiles := flag.Int("concurrentfiles", 1000, "Maximum number of files to process concurrently.")
@@ -410,7 +411,9 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	buildti := flag.Bool("buildti", false, "Build the threat intelligence database based on feed_config.json")
 	updateti := flag.Bool("updateti", false, "Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json")
 	useti := flag.Bool("useti", false, "Use the threat intelligence database if it exists")
-
+	startdate := flag.String("startdate", "", "[TODO] Parse and use provided value as a start date for log outputs.  If no end date is provided, will find all events from this point onwards.")
+	enddate := flag.String("enddate", "", "[TODO] Parse and use provided value as an end date for log outputs.  If no start date is provided, will find all events from this point prior.")
+	datecol := flag.String("datecol", "", "[TODO] The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
 	flag.Parse()
 
 	arguments := map[string]any{
@@ -433,6 +436,9 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 		"buildti":         *buildti,
 		"updateti":        *updateti,
 		"useti":           *useti,
+		"startdate":       *startdate,
+		"enddate":         *enddate,
+		"datecol":         *datecol,
 	}
 	return arguments
 }
@@ -1125,13 +1131,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 			record = append(record, "NA")
 		} else if TIexists {
 			ipTmpStruct.ThreatCat = matchType
-			if matchType == "tor" {
-				record = append(record, "tor")
-			} else if matchType == "suspicious" {
-				record = append(record, "suspicious")
-			} else if matchType == "proxy" {
-				record = append(record, "proxy")
-			}
+			record = append(record, ipTmpStruct.ThreatCat)
 		} else {
 			ipTmpStruct.ThreatCat = "none"
 			record = append(record, "none")
@@ -1261,15 +1261,126 @@ func lookupIPRecords(ip string) []string {
 
 func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 	// TODO - Actually implement this
+	combinedOutputDir := "combined_outputs"
 	logger.Info().Msg("Combining Outputs per Directory")
-	files, err := os.ReadDir(arguments["outputdir"].(string))
-	if err != nil {
+	logger.Info().Msg("Note: The first file in each directory will provide the headers for all subsequent files - those that have a mismatch will be logged and skipped.")
+	fileDirMap := make(map[string][]string)
+
+	if err := os.Mkdir(combinedOutputDir, 0755); err != nil && !errors.Is(err, os.ErrExist) {
+		logger.Error().Msg(err.Error())
 		return err
 	}
-	for _, file := range files {
-		fmt.Println(file.Name())
+
+	err := filepath.WalkDir(arguments["outputdir"].(string), func(path string, d fs.DirEntry, err error) error {
+		if !d.IsDir() {
+			fileDirMap[filepath.Dir(path)] = append(fileDirMap[filepath.Dir(path)], path)
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
 	}
+
+	var MainWaiter sync.WaitGroup
+	for k := range fileDirMap {
+		if len(fileDirMap[k]) == 0 {
+			continue
+		}
+
+		var waiter WaitGroupCount
+		writeChannel := make(chan []string)
+		t := time.Now().Format("20060102150405")
+		tmpCombinedOutput := fmt.Sprintf("%v\\combinedOutput_%v.csv", k, t)
+		outputF, err := createOutput(tmpCombinedOutput)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			continue
+		}
+		headers, err := getCSVHeaders(fileDirMap[k][0])
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			continue
+		}
+		writer := csv.NewWriter(outputF)
+		writer.Write(headers)
+		// Now we have created an output CSV and written the headers from the first file to it - for each file we will kick off a gorroutine that will read and send records to the writer channel
+		// Once all readers are done, the waitgroup will be done and the per-file channel will be closed
+		// Once all per-file channels are closed, are independent writers will finish and signal that the main wait group is done and we can proceed with execution
+
+		MainWaiter.Add(1)
+		go combineWriterListen(outputF, writer, writeChannel, logger, &MainWaiter)
+		for _, v := range fileDirMap[k] {
+			waiter.Add(1)
+			go readAndSendToChannel(v, writeChannel, &waiter, logger, headers)
+		}
+		go closeChannelWhenDone(writeChannel, &waiter)
+	}
+	logger.Info().Msg("Waiting...")
+	MainWaiter.Wait()
 	return nil
+
+}
+
+func getCSVHeaders(csvFile string) ([]string, error) {
+	inputHeaderFile, err := openInput(csvFile)
+	reader := csv.NewReader(inputHeaderFile)
+	defer inputHeaderFile.Close()
+	headers, err := reader.Read()
+	if err != nil {
+		return make([]string, 0), err
+	}
+	return headers, nil
+
+}
+
+func readAndSendToChannel(csvFile string, c chan []string, waiter *WaitGroupCount, logger zerolog.Logger, initialHeaders []string) {
+	defer waiter.Done()
+	inputHeaderFile, err := openInput(csvFile)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	defer inputHeaderFile.Close()
+	idx := 0
+	reader := csv.NewReader(inputHeaderFile)
+	for {
+		record, Ferr := reader.Read()
+
+		if Ferr == io.EOF {
+			break
+		}
+		if Ferr != nil {
+			logger.Error().Msg(Ferr.Error())
+			continue
+		}
+		if idx == 0 {
+			if !reflect.DeepEqual(initialHeaders, record) {
+				logger.Error().Msgf("Header Mismatch - Skipping: %v", csvFile)
+				return
+			}
+			idx += 1
+			continue
+		}
+		c <- record
+	}
+}
+
+func combineWriterListen(outputF *os.File, writer *csv.Writer, c chan []string, logger zerolog.Logger, MainWaiter *sync.WaitGroup) {
+	// Will receive a handle to a pre-setup CSV writer and listen on a channel for incoming records to write, breaking when the channel is closed.
+	defer MainWaiter.Done()
+	defer outputF.Close()
+	for {
+		record, ok := <-c
+		if !ok {
+			break
+		} else {
+			err := writer.Write(record)
+			if err != nil {
+				logger.Error().Msg(err.Error())
+			}
+		}
+	}
 
 }
 
@@ -1347,13 +1458,22 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 		return err
 	}
 	//t := time.Now().Format("20060102150405")
+	var waiter WaitGroupCount
 	for i := 0; i < len(feeds.Feeds); i++ {
-		destFile := fmt.Sprintf("%v\\%v.txt", intelDir, feeds.Feeds[i].Name)
-		Derr := downloadFile(logger, feeds.Feeds[i].URL, destFile, "")
-		if Derr != nil {
-			continue
-		}
+		i := i
+		go func() {
+			waiter.Add(1)
+			defer waiter.Done()
+			destFile := fmt.Sprintf("%v\\%v.txt", intelDir, feeds.Feeds[i].Name)
+			Derr := downloadFile(logger, feeds.Feeds[i].URL, destFile, "")
+			if Derr != nil {
+				logger.Error().Msgf("Error Getting File from %v: %v ", feeds.Feeds[i].URL, Derr.Error())
+			}
+		}()
 	}
+	time.Sleep(1 * time.Second)
+	logger.Info().Msg("Waiting for Intelligence Downloads...")
+	waiter.Wait()
 	return nil
 }
 
@@ -1452,12 +1572,14 @@ func main() {
 	start := time.Now()
 	logger := setupLogger()
 	arguments := parseArgs(logger)
+
 	if arguments["buildti"].(bool) || arguments["updateti"].(bool) {
 		TIBuildErr := buildThreatDB(arguments, logger)
 		if TIBuildErr != nil {
 			return
 		}
 	}
+
 	if arguments["useti"].(bool) {
 		_, err := os.Stat(threatDBFile)
 		if errors.Is(err, os.ErrNotExist) {
