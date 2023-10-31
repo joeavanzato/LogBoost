@@ -5,11 +5,13 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -25,6 +27,9 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+// TODO - Tor Node Check
+// TODO - Consider focusing on specific date range
 
 const logFile = "log2geo.log"
 
@@ -104,6 +109,33 @@ func (s *SizeTracker) AddBytes(in int, out int) {
 	s.actualFilesProcessed += 1
 }
 
+var torExitNodeURL = "https://www.dan.me.uk/torlist/?exit"
+var torExitNodeFile = "tor_exit_nodes.txt"
+var torNodeMap = make(map[string]struct{})
+var doTorEnrich = false
+var torCheckMut = sync.RWMutex{}
+
+func CheckTor(ip string) bool {
+	torCheckMut.RLock()
+	defer torCheckMut.RUnlock()
+	_, e := torNodeMap[ip]
+	return e
+}
+
+var threatDBFile = "threats.db"
+var useIntel = false
+var intelDir = "intel"
+var feedName = "feed_config.json"
+
+type Feeds struct {
+	Feeds []Feed `json:"feeds"`
+}
+type Feed struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Type string `json:"type"`
+}
+
 // Used in func visit to add log paths as we crawl the input directory
 var logsToProcess = make([]string, 0)
 
@@ -165,6 +197,8 @@ func (wg *WaitGroupCount) GetCount() int {
 
 // ////
 
+var geoFields = []string{"_ASN", "_Country", "_City", "Proxy", "Domains", "TORExit"}
+
 // https://github.com/oschwald/geoip2-golang/blob/main/reader.go
 // TODO - Review potential MaxMind fields to determine usefulness of any others - really depends on the 'type' of DB we have access to
 // Refactor to provide fields properly from IP/ASN
@@ -189,6 +223,8 @@ type ASN struct {
 	AutonomousSystemNumber       uint   `maxminddb:"autonomous_system_number"`
 }
 
+var ipv6_regex = regexp.MustCompile(`.*(?P<ip>(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))).*`)
+var ipv4_regex = regexp.MustCompile(`.*(?P<ip>(((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4})).*`)
 var tenDot = net.IPNet{
 	IP:   net.ParseIP("10.0.0.0"),
 	Mask: net.CIDRMask(8, 32),
@@ -235,7 +271,7 @@ func FileExists(filename string) bool {
 }
 
 func downloadFile(logger zerolog.Logger, url string, filepath string, key string) (err error) {
-	logger.Info().Msgf("Downloading MaxMind %v DB to path: %v", key, filepath)
+	logger.Info().Msgf("Downloading File %v to path: %v", url, filepath)
 	out, err := os.Create(filepath)
 	if err != nil {
 		return err
@@ -386,6 +422,11 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	maxgoperfile := flag.Int("maxgoperfile", 20, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
 	batchsize := flag.Int("batchsize", 100, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
 	concurrentfiles := flag.Int("concurrentfiles", 1000, "Maximum number of files to process concurrently.")
+	combine := flag.Bool("combine", false, "Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.")
+	buildti := flag.Bool("buildti", false, "Build the threat intelligence database based on feed_config.json")
+	updateti := flag.Bool("updateti", false, "Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json")
+	useti := flag.Bool("useti", false, "Use the threat intelligence database if it exists")
+
 	flag.Parse()
 
 	arguments := map[string]any{
@@ -404,6 +445,10 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 		"maxgoperfile":    *maxgoperfile,
 		"batchsize":       *batchsize,
 		"concurrentfiles": *concurrentfiles,
+		"combine":         *combine,
+		"buildti":         *buildti,
+		"updateti":        *updateti,
+		"useti":           *useti,
 	}
 	return arguments
 }
@@ -553,7 +598,6 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 	ipAddressColumn := -1
 	jsonColumn := -1
 	headers := make([]string, 0)
-	geoFields := []string{"_ASN", "_Country", "_City", "Proxy", "Domains"}
 	newHeaderCount := 0
 	for {
 		record, err := parser.Read()
@@ -810,9 +854,11 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		} else if strings.ToLower(v) == strings.ToLower("ClientIpAddress") {
 			ipAddressColumn = i
 			break
+		} else if strings.ToLower(v) == strings.ToLower("c-ip") {
+			ipAddressColumn = i
+			break
 		}
 	}
-	geoFields := []string{"_ASN", "_Country", "_City", "Proxy", "Domains"}
 	headers = append(headers, geoFields...)
 	err = writer.Write(headers)
 	if err != nil {
@@ -1007,11 +1053,11 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 
 	ip := net.ParseIP(ipString)
 	if ip == nil {
-		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 		return record
 	}
 	if isPrivateIP(ip, ipString) {
-		record = append(record, "PrivateNet", "PrivateNet", "PrivateNet", "PrivateNet", "PrivateNet")
+		record = append(record, "PVT", "PVT", "PVT", "PVT", "PVT", "PVT")
 		return record
 	}
 
@@ -1085,6 +1131,17 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	} else {
 		record = append(record, "")
 	}
+
+	if doTorEnrich {
+		if CheckTor(ipString) {
+			record = append(record, "TRUE")
+		} else {
+			record = append(record, "FALSE")
+		}
+	} else {
+		record = append(record, "")
+	}
+
 	return record
 }
 
@@ -1169,11 +1226,207 @@ func lookupIPRecords(ip string) []string {
 	return records
 }
 
+// TODO
+func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
+	// TODO
+	logger.Info().Msg("Combining Outputs per Directory")
+	files, err := os.ReadDir(arguments["outputdir"].(string))
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		fmt.Println(file.Name())
+	}
+	return nil
+
+}
+
+func makeTorList(arguments map[string]any, logger zerolog.Logger) {
+	_, err := os.Stat(torExitNodeFile)
+	if errors.Is(err, os.ErrNotExist) {
+		err2 := downloadFile(logger, torExitNodeURL, torExitNodeFile, "")
+		if err2 != nil {
+			logger.Error().Msg("Error Downloading TOR Exit Nodes")
+			logger.Error().Msg(err.Error())
+			return
+		}
+	}
+	// File exists - either it already existed or we downloaded it.
+	torNodes := ReadFileToSlice(torExitNodeFile, logger)
+	for _, v := range torNodes {
+		line := strings.TrimSpace(v)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		torNodeMap[line] = struct{}{}
+	}
+	doTorEnrich = true
+}
+
+func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
+	// First check if the db exists - if not, initialize the database
+	// Table name: ips
+	// Columns (all string): ip, url, type
+	// type values: proxy, suspicious, tor
+	_, err := os.Stat(threatDBFile)
+	if errors.Is(err, os.ErrNotExist) {
+		initErrr := initializeThreatDB(arguments, logger)
+		if initErrr != nil {
+			return initErrr
+		}
+	}
+	// If we are updating intel, lets do so now.
+	// Read our feed file first to use both in intel downloads then in pushing to the sqlite
+	var feeds Feeds
+	jsonData, ReadErr := os.ReadFile(feedName)
+	if ReadErr != nil {
+		logger.Error().Msg(ReadErr.Error())
+		return ReadErr
+	}
+
+	jsonErr := json.Unmarshal(jsonData, &feeds)
+	if jsonErr != nil {
+		logger.Error().Msg(jsonErr.Error())
+		return jsonErr
+	}
+
+	if arguments["updateti"].(bool) {
+		UpdateErr := updateIntelligence(arguments, logger, feeds)
+		if UpdateErr != nil {
+			return UpdateErr
+		}
+	}
+
+	// Now we have downloaded intel to intelDir - lets go through each file and parse for ipAddress hits within each file - we will use the filename to tell us what 'type' the data should be categorized as
+	ingestErr := ingestIntel(arguments, logger, feeds)
+	if ingestErr != nil {
+		return ingestErr
+	}
+
+	useIntel = true
+	return nil
+}
+
+func updateIntelligence(arguments map[string]any, logger zerolog.Logger, feeds Feeds) error {
+	// Iterate through feeds and downloads each file as $FEEDNAME_TIMESTAMP.txt into newly created 'intel' directory if it does not exist
+	if err := os.Mkdir(intelDir, 0755); err != nil && !errors.Is(err, os.ErrExist) {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	//t := time.Now().Format("20060102150405")
+	for i := 0; i < len(feeds.Feeds); i++ {
+		destFile := fmt.Sprintf("%v\\%v.txt", intelDir, feeds.Feeds[i].Name)
+		Derr := downloadFile(logger, feeds.Feeds[i].URL, destFile, "")
+		if Derr != nil {
+			continue
+		}
+	}
+	return nil
+}
+
+func initializeThreatDB(arguments map[string]any, logger zerolog.Logger) error {
+	file, CreateErr := os.Create(threatDBFile) // Create SQLite file
+	if CreateErr != nil {
+		logger.Error().Msg(CreateErr.Error())
+		return CreateErr
+	}
+	file.Close()
+	db, _ := sql.Open("sqlite3", threatDBFile)
+	defer db.Close()
+	createTableStatement := `CREATE TABLE ips ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "ip" TEXT, "type" TEXT, "url" TEXT, UNIQUE(ip));`
+	_, exeE := db.Exec(createTableStatement)
+	if exeE != nil {
+		logger.Error().Msg(CreateErr.Error())
+		return exeE
+	}
+	return nil
+}
+
+func ingestIntel(arguments map[string]any, logger zerolog.Logger, feeds Feeds) error {
+	typeMap := make(map[string]string)
+	urlMap := make(map[string]string)
+	db, _ := sql.Open("sqlite3", threatDBFile)
+	for i := 0; i < len(feeds.Feeds); i++ {
+		typeMap[feeds.Feeds[i].Name] = feeds.Feeds[i].Type
+		urlMap[feeds.Feeds[i].Name] = feeds.Feeds[i].URL
+	}
+	intelFiles, err := os.ReadDir(intelDir)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+	}
+	for _, e := range intelFiles {
+		baseNameWithoutExtension := strings.TrimSuffix(filepath.Base(e.Name()), filepath.Ext(e.Name()))
+		err = ingestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+		}
+	}
+
+	return nil
+}
+
+func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger zerolog.Logger) error {
+	fileLines := ReadFileToSlice(inputFile, logger)
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare("insert or ignore into ips(ip, type, url) values(?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, line := range fileLines {
+		lineTrimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(lineTrimmed, "#") {
+			continue
+		}
+		v, e := regexFirstIPFromString(lineTrimmed)
+		if e {
+			_, err = stmt.Exec(v, url, iptype)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func regexFirstIPFromString(input string) (string, bool) {
+	match := ipv4_regex.FindStringSubmatch(input)
+	if match != nil {
+		for _, ip := range match {
+			return ip, true
+		}
+	}
+	match2 := ipv6_regex.FindStringSubmatch(input)
+	if match2 != nil {
+		for _, ip := range match2 {
+			return ip, true
+		}
+	}
+	return "", false
+}
+
 func main() {
 	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
 	start := time.Now()
 	logger := setupLogger()
 	arguments := parseArgs(logger)
+	if arguments["buildti"].(bool) || arguments["useti"].(bool) || arguments["updateti"].(bool) {
+		TIBuildErr := buildThreatDB(arguments, logger)
+		if TIBuildErr != nil {
+			return
+		}
+	}
+	return
+	makeTorList(arguments, logger)
 	APIerr := setAPIUrls(arguments, logger)
 	if APIerr != nil {
 		return
@@ -1190,4 +1443,11 @@ func main() {
 	logger.Info().Msgf("Actual Files Processed: %v", filesSuccessfullyProcessed)
 	logger.Info().Msgf("Approximate Files per Second: %v", int(float64(filesSuccessfullyProcessed)/elapsed.Seconds()))
 	logger.Info().Msgf("Elapsed Time: %v seconds", elapsed.Seconds())
+	if arguments["combine"].(bool) {
+		Cerr := combineOutputs(arguments, logger)
+		if Cerr != nil {
+			logger.Error().Msg(Cerr.Error())
+		}
+		return
+	}
 }
