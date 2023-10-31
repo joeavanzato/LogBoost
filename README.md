@@ -37,17 +37,22 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -maxgoperfile[int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
 -batchsize[int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
 -concurrentfiles[int] (default=1000) - Limit how many files are processed concurrently.
+-buildti[bool] (default=false) - Build the threat intelligence database based on feed_config.json
+-updateti[bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
+-useti[bool] (default=false) - Use the threat intelligence database if it exists
 ```
 
 ### Example Usage
 ```
 log2geo.exe -logdir logs -api XXX
+log2geo.exe -buildti -useti -logdir C:\logs -dns -ipcol ipaddress : Downloaded the threat feeds listed in feed_config.json, parse into a SQLite DB and use when enriching the target CSV column 'ipaddress' along with live-querying domain names associated with the IP address.
 log2geo.exe -logdir logs -dns -maxgoperfile 20 -batchsize 100 : Process each file with up to 20 goroutines handling 100 lines per routine (20,000 concurrently) and also enrich detected IP addresses with DNS lookups
 log2geo.exe -logdir C:\azureadlogs -outputdir enriched_logs : Look for all CSVs in directory 'C:\azureadlogs', output logs to 'enriched_logs' and use defaults for IP/JSON columns that may contain IP addresses (Azure Log Exports)
 log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory 'somelogs' and subsequently enrich based on column-named 'IPADDRESS'
 log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
 log2geo.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
 ```
+
 
 ### TODOs
 * Add capability to 'flatten' JSON columns embedded within a CSV
