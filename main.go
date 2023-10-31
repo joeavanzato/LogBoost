@@ -64,10 +64,11 @@ var maxMindFileLocations = map[string]string{
 var auditLogIPRegex = regexp.MustCompile(`.*ClientIP":"(?P<ClientIP>.*?)",.*`)
 
 type IPCache struct {
-	ASNOrg  string
-	Country string
-	City    string
-	Domain  string
+	ASNOrg    string
+	Country   string
+	City      string
+	Domains   []string
+	ThreatCat string
 }
 
 // Used to help keep track of jobs in a WaitGroup
@@ -157,23 +158,6 @@ func AddIP(ip string, ipcache IPCache) {
 	IPCacheMap[ip] = ipcache
 }
 
-// TODO - Put lock and map in single struct for organization - then refactor CheckIPDNS and AddIPDNS to just take the original cachemap struct
-var DNSCacheMap = make(map[string][]string)
-var DNSCacheMapLock = sync.RWMutex{}
-
-// TODO - Measure performance and compare to using sync.Map instead
-func CheckIPDNS(ip string) ([]string, bool) {
-	DNSCacheMapLock.RLock()
-	defer DNSCacheMapLock.RUnlock()
-	v, e := DNSCacheMap[ip]
-	return v, e
-}
-func AddIPDNS(ip string, records []string) {
-	DNSCacheMapLock.Lock()
-	defer DNSCacheMapLock.Unlock()
-	DNSCacheMap[ip] = records
-}
-
 // Should probably get rid of all of the below since it really isn't necessary now that we are using the jobs tracker instead of this to limit concurrency maxes
 // ////
 type WaitGroupCount struct {
@@ -197,7 +181,7 @@ func (wg *WaitGroupCount) GetCount() int {
 
 // ////
 
-var geoFields = []string{"_ASN", "_Country", "_City", "Domains", "THREATCAT"}
+var geoFields = []string{"_ASN", "_Country", "_City", "Domains", "ThreatCategory"}
 
 // https://github.com/oschwald/geoip2-golang/blob/main/reader.go
 // TODO - Review potential MaxMind fields to determine usefulness of any others - really depends on the 'type' of DB we have access to
@@ -1073,58 +1057,54 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 
 	ipStruct, IPCacheExists := CheckIP(ipString)
 	if IPCacheExists {
-		record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City)
+		record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, strings.Join(ipStruct.Domains, "|"), ipStruct.ThreatCat)
+		return record
 	}
-	if !IPCacheExists {
-		ipTmpStruct := IPCache{
-			ASNOrg:  "",
-			Country: "",
-			City:    "",
-			Domain:  "",
-		}
-		tmpCity := City{}
-		tmpAsn := ASN{}
-		err := asnDB.Lookup(ip, &tmpAsn)
-		if err != nil {
-			ipTmpStruct.ASNOrg = ""
-			record = append(record, "")
-		} else {
-			ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
-			record = append(record, tmpAsn.AutonomousSystemOrganization)
-		}
-		err = cityDB.Lookup(ip, &tmpCity)
-		if err != nil {
-			ipTmpStruct.Country = ""
-			ipTmpStruct.City = ""
-			record = append(record, "", "")
-		} else {
-			ipTmpStruct.Country = tmpCity.Country.Names["en"]
-			ipTmpStruct.City = tmpCity.City.Names["en"]
-			record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"])
-		}
-		AddIP(ipString, ipTmpStruct)
+
+	ipTmpStruct := IPCache{
+		ASNOrg:    "",
+		Country:   "",
+		City:      "",
+		Domains:   make([]string, 0),
+		ThreatCat: "",
+	}
+	tmpCity := City{}
+	tmpAsn := ASN{}
+	err := asnDB.Lookup(ip, &tmpAsn)
+	if err != nil {
+		ipTmpStruct.ASNOrg = ""
+		record = append(record, "")
+	} else {
+		ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
+		record = append(record, tmpAsn.AutonomousSystemOrganization)
+	}
+	err = cityDB.Lookup(ip, &tmpCity)
+	if err != nil {
+		ipTmpStruct.Country = ""
+		ipTmpStruct.City = ""
+		record = append(record, "", "")
+	} else {
+		ipTmpStruct.Country = tmpCity.Country.Names["en"]
+		ipTmpStruct.City = tmpCity.City.Names["en"]
+		record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"])
 	}
 
 	if useDNS {
 		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
 		// TODO - Consider adding DomainCount column
-		records, dnsExists := CheckIPDNS(ipString)
-		baseDNS := ""
-		if dnsExists {
-			for _, v := range records {
-				baseDNS += v
-				baseDNS += ", "
-			}
-			record = append(record, baseDNS)
-		} else {
-			dnsRecords := lookupIPRecords(ipString)
-			AddIPDNS(ipString, dnsRecords)
-			for _, v := range dnsRecords {
-				baseDNS += v
-				baseDNS += ", "
-			}
-			record = append(record, baseDNS)
-		}
+		//records, dnsExists := CheckIPDNS(ipString)
+		dnsRecords := lookupIPRecords(ipString)
+		ipTmpStruct.Domains = dnsRecords
+		record = append(record, strings.Join(dnsRecords, "|"))
+		/*		if dnsExists {
+					ipTmpStruct.Domains = records
+					record = append(record, strings.Join(records, "|"))
+				} else {
+					dnsRecords := lookupIPRecords(ipString)
+					//AddIPDNS(ipString, dnsRecords)
+
+					record = append(record, strings.Join(records, "|"))
+				}*/
 	} else {
 		record = append(record, "")
 	}
@@ -1141,21 +1121,27 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	if useIntel {
 		matchType, TIexists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
 		if DBError != nil {
+			ipTmpStruct.ThreatCat = "NA"
 			record = append(record, "NA")
 		} else if TIexists {
+			ipTmpStruct.ThreatCat = matchType
 			if matchType == "tor" {
-				record = append(record, "TOR")
+				record = append(record, "tor")
 			} else if matchType == "suspicious" {
-				record = append(record, "SUSPICIOUS")
+				record = append(record, "suspicious")
 			} else if matchType == "proxy" {
-				record = append(record, "PROXY")
+				record = append(record, "proxy")
 			}
 		} else {
-			record = append(record, "NONE")
+			ipTmpStruct.ThreatCat = "none"
+			record = append(record, "none")
 		}
 	} else {
+		ipTmpStruct.ThreatCat = "NA"
 		record = append(record, "NA")
 	}
+
+	AddIP(ipString, ipTmpStruct)
 
 	return record
 }
