@@ -313,6 +313,16 @@
 			"name": "threatfox_abusech_recent_ip",
 			"url": "https://threatfox.abuse.ch/export/csv/ip-port/recent/",
 			"type": "suspicious"
+		},
+		{
+			"name": "firehol_proxies_large",
+			"url": "https://iplists.firehol.org/files/firehol_proxies.netset",
+			"type": "proxy"
+		},
+		{
+			"name": "firehol_tor_exits_30d",
+			"url": "https://iplists.firehol.org/files/tor_exits_30d.ipset",
+			"type": "tor"
 		}
 	]
 }
