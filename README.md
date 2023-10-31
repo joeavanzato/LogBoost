@@ -53,6 +53,13 @@ log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files t
 log2geo.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
 ```
 
+### Threat Intelligence Notes
+log2geo is capable of downloading text-based threat feeds, normalizing to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
+
+Over 40 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to tell log2geo to download fresh copies of intelligence and ingest to the databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
+
+Invoke with the 'useti' flag to actually use the database during enrichment processes.
+
 
 ### TODOs
 * Add capability to 'flatten' JSON columns embedded within a CSV
