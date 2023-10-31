@@ -209,7 +209,7 @@ type ASN struct {
 }
 
 var ipv6_regex = regexp.MustCompile(`.*(?P<ip>(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))).*`)
-var ipv4_regex = regexp.MustCompile(`.*(?P<ip>(((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4})).*`)
+var ipv4_regex = regexp.MustCompile(`.*(?P<ip>((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}).*`)
 var tenDot = net.IPNet{
 	IP:   net.ParseIP("10.0.0.0"),
 	Mask: net.CIDRMask(8, 32),
@@ -410,6 +410,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 	combine := flag.Bool("combine", false, "Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.")
 	buildti := flag.Bool("buildti", false, "Build the threat intelligence database based on feed_config.json")
 	updateti := flag.Bool("updateti", false, "Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json")
+	rawtxt := flag.Bool("rawtxt", false, "When -convert is enabled and there is no known parsing technique for the provided file, treat the entire line as a single column named raw and use regex to find the first IP to enrich.")
 	useti := flag.Bool("useti", false, "Use the threat intelligence database if it exists")
 	startdate := flag.String("startdate", "", "[TODO] Parse and use provided value as a start date for log outputs.  If no end date is provided, will find all events from this point onwards.")
 	enddate := flag.String("enddate", "", "[TODO] Parse and use provided value as an end date for log outputs.  If no start date is provided, will find all events from this point prior.")
@@ -436,6 +437,7 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 		"buildti":         *buildti,
 		"updateti":        *updateti,
 		"useti":           *useti,
+		"rawtxt":          *rawtxt,
 		"startdate":       *startdate,
 		"enddate":         *enddate,
 		"datecol":         *datecol,
@@ -806,9 +808,16 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if err != nil {
 			return
 		}
+		// TODO - Add more cases here for other parsing techniques like KV style
 		if isIISorW3c {
 			fileProcessed = true
 			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
+			if err != nil {
+				logger.Error().Msg(err.Error())
+			}
+		} else if arguments["rawtxt"].(bool) {
+			fileProcessed = true
+			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
 				logger.Error().Msg(err.Error())
 			}
@@ -826,6 +835,92 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		}
 		sizeTracker.AddBytes(int(IfileStat.Size()/(1<<20)), int(OfileStat.Size()/(1<<20)))
 	}
+}
+
+func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
+	inputF, err := openInput(inputFile)
+	defer inputF.Close()
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	outputF, err := createOutput(outputFile)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	writer := csv.NewWriter(outputF)
+	headers := make([]string, 0)
+	headers = append(headers, "line")
+	headers = append(headers, geoFields...)
+	err = writer.Write(headers)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	scanner := bufio.NewScanner(inputF)
+	var fileWG WaitGroupCount
+	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
+	lineBatchSize := arguments["batchsize"].(int)
+	jobTracker := runningJobs{
+		JobCount: 0,
+		mw:       sync.RWMutex{},
+	}
+	records := make([][]string, 0)
+	recordChannel := make(chan []string)
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF)
+	idx := 0
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if len(line) == 0 {
+			continue
+		}
+		scanErr := scanner.Err()
+		if scanErr == io.EOF {
+			fileWG.Add(1)
+			jobTracker.AddJob()
+			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+			records = nil
+			break
+		}
+		if scanErr != nil {
+			logger.Error().Msg(scanErr.Error())
+			return scanErr
+		}
+		records = append(records, []string{line})
+		if len(records) <= lineBatchSize {
+			continue
+		} else {
+			if jobTracker.GetJobs() >= maxRoutinesPerFile {
+			waitForOthers:
+				for {
+					if jobTracker.GetJobs() >= maxRoutinesPerFile {
+						continue
+					} else {
+						fileWG.Add(1)
+						jobTracker.AddJob()
+						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+						break waitForOthers
+					}
+				}
+			} else {
+				fileWG.Add(1)
+				jobTracker.AddJob()
+				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+			}
+			records = nil
+		}
+		idx += 1
+	}
+	fileWG.Add(1)
+	// Catchall in case there are still records to process
+	jobTracker.AddJob()
+	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+	closeChannelWhenDone(recordChannel, &fileWG)
+	return nil
 }
 
 func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
@@ -949,6 +1044,11 @@ func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger,
 				logger.Error().Msg(err.Error())
 			}
 		}
+	}
+	w.Flush()
+	err := w.Error()
+	if err != nil {
+		logger.Error().Msg(err.Error())
 	}
 }
 
@@ -1140,9 +1240,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		ipTmpStruct.ThreatCat = "NA"
 		record = append(record, "NA")
 	}
-
 	AddIP(ipString, ipTmpStruct)
-
 	return record
 }
 
@@ -1477,6 +1575,7 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 	return nil
 }
 
+// TODO - Determine whether we actually need URL in DB as it basically doubles the size or more of the db
 func initializeThreatDB(logger zerolog.Logger) error {
 	file, CreateErr := os.Create(threatDBFile) // Create SQLite file
 	if CreateErr != nil {
@@ -1554,14 +1653,16 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 func regexFirstIPFromString(input string) (string, bool) {
 	match := ipv4_regex.FindStringSubmatch(input)
 	if match != nil {
-		for _, ip := range match {
-			return ip, true
+		for i, name := range ipv4_regex.SubexpNames() {
+			if i != 0 && name != "" {
+				return match[i], true
+			}
 		}
 	}
 	match2 := ipv6_regex.FindStringSubmatch(input)
 	if match2 != nil {
-		for _, ip := range match2 {
-			return ip, true
+		for i, _ := range ipv4_regex.SubexpNames() {
+			return match2[i], true
 		}
 	}
 	return "", false
