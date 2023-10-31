@@ -19,27 +19,28 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 
 ### Commandline Arguments:
 ```
--dbdir[string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
--api[string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
--logdir[string] (default="input") - specify the directory containing one or more CSV files to process
--outputdir[string] (default="output") - specify the directory to store enriched logs - defaults to $CWD\output
--ipcol[string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
--jsoncol[string] (default="AuditData") - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
--flatten[bool] (default=false) - [TODO] - flatten a nested JSON structure into a CSV
--regex[bool] (default=false) - Scan each line for first IP address matche via regex rather than specifying a specific column name.
--convert[bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
+-dbdir [string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
+-api [string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
+-logdir [string] (default="input") - specify the directory containing one or more CSV files to process
+-outputdir [string] (default="output") - specify the directory to store enriched logs - defaults to $CWD\output
+-ipcol [string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
+-jsoncol [string] (default="AuditData") - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
+-flatten [bool] (default=false) - [TODO] - flatten a nested JSON structure into a CSV
+-regex [bool] (default=false) - Scan each line for first IP address matche via regex rather than specifying a specific column name.
+-convert [bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
   - IIS - Looks for #Fields and comma-delimited values
   - W3C - Looks for #Fields and space-delimited values
-  - KV - Looks for KV-style logging based on provided -delimiter and -separator values
--separator[string] (default="=") - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
--delimiter[string] (default=" ") - Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
--dns[bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
--maxgoperfile[int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
--batchsize[int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
--concurrentfiles[int] (default=1000) - Limit how many files are processed concurrently.
--buildti[bool] (default=false) - Build the threat intelligence database based on feed_config.json
--updateti[bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
--useti[bool] (default=false) - Use the threat intelligence database if it exists
+  - KV - [TODO] Looks for KV-style logging based on provided -delimiter and -separator values
+-separator [string] (default="=") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
+-delimiter [string] (default=" ") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
+-dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
+-maxgoperfile [int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
+-batchsize [int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
+-concurrentfiles [int] (default=1000) - Limit how many files are processed concurrently.
+-combine [bool] (default=false) - Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.
+-buildti [bool] (default=false) - Build the threat intelligence database based on feed_config.json
+-updateti [bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
+-useti [bool] (default=false) - Use the threat intelligence database if it exists
 ```
 
 ### Example Usage
@@ -51,6 +52,7 @@ log2geo.exe -logdir C:\azureadlogs -outputdir enriched_logs : Look for all CSVs 
 log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory 'somelogs' and subsequently enrich based on column-named 'IPADDRESS'
 log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
 log2geo.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
+log2geo.exe -logdir logs -updateti -useti -batchsize 1000 -maxgoperfile 40 -concurrentfiles 5000 -regex  -combine : Update and use threat intelligence to process CSVs from "logs" dir using the specified concurrency settings, combining final outputs and using regex to find the appropriate IP address to enrich on a line-by-line basis.
 ```
 
 ### Threat Intelligence Notes
