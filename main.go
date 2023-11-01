@@ -393,7 +393,7 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) {
 	}
 }
 
-func parseArgs(logger zerolog.Logger) map[string]any {
+func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
 	logDir := flag.String("logdir", "input", "Directory containing 1 or more Azure AD CSV Exports to enrich")
 	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD\\output'")
@@ -444,7 +444,29 @@ func parseArgs(logger zerolog.Logger) map[string]any {
 		"enddate":         *enddate,
 		"datecol":         *datecol,
 	}
-	return arguments
+
+	if *startdate != "" {
+		startimestamp, err := time.Parse("01/02/2006", *startdate)
+		if err != nil {
+			logger.Error().Msg("Could not parse provided startdate - ensure format is MM/DD/YYYY")
+			return make(map[string]any), err
+		}
+		arguments["startdate"] = startimestamp
+	}
+	if *enddate != "" {
+		endtimestamp, err := time.Parse("01/02/2006", *startdate)
+		if err != nil {
+			logger.Error().Msg("Could not parse provided enddate - ensure format is MM/DD/YYYY")
+			return make(map[string]any), err
+		}
+		arguments["enddate"] = endtimestamp
+	}
+	if (*startdate != "" || *enddate != "") && *datecol == "" {
+		logger.Error().Msg("No date column provided - cannot use startdate/enddate without providing the column to use for filtering!")
+		return make(map[string]any), errors.New("No date column provided - cannot use startdate/enddate without providing the column to use for filtering!")
+	}
+
+	return arguments, nil
 }
 
 func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
@@ -1588,7 +1610,7 @@ func initializeThreatDB(logger zerolog.Logger) error {
 	file.Close()
 	db, _ := sql.Open("sqlite3", threatDBFile)
 	defer db.Close()
-	createTableStatement := `CREATE TABLE ips ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "ip" TEXT, "category" TEXT, "url" TEXT, UNIQUE(ip));`
+	createTableStatement := `CREATE TABLE ips ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "ip" TEXT, "category" TEXT, UNIQUE(ip));`
 	_, exeE := db.Exec(createTableStatement)
 	if exeE != nil {
 		logger.Error().Msg(CreateErr.Error())
@@ -1628,7 +1650,7 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare("insert or ignore into ips(ip, category, url) values(?, ?, ?)")
+	stmt, err := tx.Prepare("insert or ignore into ips(ip, category) values(?, ?)")
 	if err != nil {
 		return err
 	}
@@ -1640,7 +1662,7 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		}
 		v, e := regexFirstPublicIPFromString(lineTrimmed)
 		if e {
-			_, err = stmt.Exec(v, iptype, url)
+			_, err = stmt.Exec(v, iptype)
 			if err != nil {
 				return err
 			}
@@ -1696,17 +1718,30 @@ func regexFirstPublicIPFromString(input string) (string, bool) {
 	return "", false
 }
 
+func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error) {
+	// Receive a target date and compare to startdate and enddate timestamp - return true if..
+	// If startdate provided with no enddate and eventTimestamp is after startdate
+	// If enddate provided with no startdate and eventTimestamp is before enddate
+	// If both startdate and enddate are provided and eventTimestamp is startdate <= eventTimestamp <= enddate
+
+	return false, nil
+}
+
 func main() {
 	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
 	start := time.Now()
 	logger := setupLogger()
-	arguments := parseArgs(logger)
+	arguments, err := parseArgs(logger)
+	if err != nil {
+		return
+	}
 
 	if arguments["buildti"].(bool) || arguments["updateti"].(bool) {
 		TIBuildErr := buildThreatDB(arguments, logger)
 		if TIBuildErr != nil {
-			return
+			logger.Error().Msg(TIBuildErr.Error())
 		}
+		return
 	}
 
 	if arguments["useti"].(bool) {
