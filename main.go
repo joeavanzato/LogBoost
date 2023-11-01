@@ -1166,7 +1166,7 @@ func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.R
 				logger.Error().Msgf("Could not parse timestamp (%v) using provided layout (%v)!", tempArgs["dateformat"].(string), record[dateindex])
 			}
 			if err == nil {
-				if !(recordTimestamp.Before(tempArgs["enddate"].(time.Time)) && recordTimestamp.After(tempArgs["startdate"].(time.Time))) {
+				if !(recordTimestamp.Before(tempArgs["enddate"].(time.Time)) && recordTimestamp.After(tempArgs["startdate"].(time.Time))) && !(recordTimestamp.Equal(tempArgs["enddate"].(time.Time))) && !(recordTimestamp.Equal(tempArgs["startdate"].(time.Time))) {
 					//fmt.Printf("SKIP: Start Date: %v, End Date %v, Timestamp: %v \n", tempArgs["enddate"].(time.Time), tempArgs["startdate"].(time.Time), recordTimestamp)
 					continue
 				}
