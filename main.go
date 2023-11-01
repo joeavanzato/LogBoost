@@ -138,6 +138,24 @@ type Feed struct {
 	Type string `json:"type"`
 }
 
+type threadMap struct {
+	data map[string]any
+	lock sync.RWMutex
+}
+
+func (tm *threadMap) Set(key string, val any) {
+	tm.lock.Lock()
+	defer tm.lock.Unlock()
+	tm.data[key] = val
+}
+
+func (tm *threadMap) Get(key string) (any, bool) {
+	tm.lock.RLock()
+	defer tm.lock.RUnlock()
+	v, e := tm.data[key]
+	return v, e
+}
+
 // Used in func visit to add log paths as we crawl the input directory
 var logsToProcess = make([]string, 0)
 
@@ -408,7 +426,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dns := flag.Bool("dns", false, "If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
 	maxgoperfile := flag.Int("maxgoperfile", 20, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
 	batchsize := flag.Int("batchsize", 100, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
-	concurrentfiles := flag.Int("concurrentfiles", 1000, "Maximum number of files to process concurrently.")
+	concurrentfiles := flag.Int("concurrentfiles", 100, "Maximum number of files to process concurrently.")
 	combine := flag.Bool("combine", false, "Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.")
 	buildti := flag.Bool("buildti", false, "Build the threat intelligence database based on feed_config.json")
 	updateti := flag.Bool("updateti", false, "Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json")
@@ -561,11 +579,26 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	}
 	maxConcurrentFiles := arguments["concurrentfiles"].(int)
 	tempArgs := make(map[string]any)
+	tempArgs["dateindex"] = -1
 
 	if useIntel {
 		db, _ := sql.Open("sqlite3", threatDBFile)
 		tempArgs["db"] = db
 	}
+	tempArgs["dateformat"] = arguments["dateformat"].(string)
+	_, ok := arguments["startdate"].(time.Time)
+	if ok {
+		tempArgs["startdate"] = arguments["startdate"].(time.Time)
+	} else {
+		tempArgs["startdate"] = ""
+	}
+	_, ok = arguments["enddate"].(time.Time)
+	if ok {
+		tempArgs["enddate"] = arguments["enddate"].(time.Time)
+	} else {
+		tempArgs["enddate"] = ""
+	}
+
 	for _, file := range logFiles {
 		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
 		base := strings.ToLower(filepath.Base(file))
@@ -727,18 +760,9 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		return
 	}
 
-	tempArgs["dateindex"] = -1
+	dateindex := -1
 	if arguments["datecol"].(string) != "" {
-		tempArgs["dateindex"] = findDateHeaderIndex(headers, arguments["datecol"].(string))
-		tempArgs["dateformat"] = arguments["dateformat"].(string)
-		_, ok := arguments["startdate"].(time.Time)
-		if ok {
-			tempArgs["startdate"] = arguments["startdate"].(time.Time)
-		}
-		_, ok = arguments["enddate"].(time.Time)
-		if ok {
-			tempArgs["enddate"] = arguments["enddate"].(time.Time)
-		}
+		dateindex = findDateHeaderIndex(headers, arguments["datecol"].(string))
 	}
 
 	idx := 0
@@ -801,14 +825,14 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -816,7 +840,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	records = nil
 	closeChannelWhenDone(recordChannel, &fileWG)
 }
@@ -930,7 +954,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
 			records = nil
 			break
 		}
@@ -950,14 +974,14 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
 			}
 			records = nil
 		}
@@ -966,7 +990,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	return nil
 }
@@ -1007,18 +1031,9 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 			break
 		}
 	}
-	tempArgs["dateindex"] = -1
+	dateindex := -1
 	if arguments["datecol"].(string) != "" {
-		tempArgs["dateindex"] = findDateHeaderIndex(headers, arguments["datecol"].(string))
-		tempArgs["dateformat"] = arguments["dateformat"].(string)
-		_, ok := arguments["startdate"].(time.Time)
-		if ok {
-			tempArgs["startdate"] = arguments["startdate"].(time.Time)
-		}
-		_, ok = arguments["enddate"].(time.Time)
-		if ok {
-			tempArgs["enddate"] = arguments["enddate"].(time.Time)
-		}
+		dateindex = findDateHeaderIndex(headers, arguments["datecol"].(string))
 	}
 
 	headers = append(headers, geoFields...)
@@ -1056,7 +1071,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		}
@@ -1077,14 +1092,14 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -1093,7 +1108,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	return nil
 }
@@ -1124,22 +1139,27 @@ func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger,
 	}
 }
 
-func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any) {
-	defer waitGroup.Done()
-	defer tracker.SubJob()
+func getDateBounds(tempArgs map[string]any) (time.Time, time.Time) {
+	startDate, _ := time.Parse("2006-01-02", "1800-01-01")
+	endDate, _ := time.Parse("2006-01-02", "2300-01-01")
 	sd, sdexist := tempArgs["startdate"].(time.Time)
 	ed, edexist := tempArgs["enddate"].(time.Time)
-	startDate, _ := time.Parse("2006-01-02", "1800-01-01")
 	if sdexist {
 		startDate = sd
 	}
-	endDate, _ := time.Parse("2006-01-02", "2300-01-01")
 	if edexist {
 		endDate = ed
 	}
+	return startDate, endDate
+}
+
+func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any, dateindex int) {
+	defer waitGroup.Done()
+	defer tracker.SubJob()
+	startDate, endDate := getDateBounds(tempArgs)
 
 	for _, record := range records {
-		if tempArgs["dateindex"] != -1 {
+		if tempArgs["dateindex"].(int) != -1 {
 			// we are using date filtering and have a successfully identified index column to use
 			recordTimestamp, err := time.Parse(tempArgs["dateformat"].(string), record[tempArgs["dateindex"].(int)])
 			if err != nil {
@@ -1248,7 +1268,10 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
-
+	if ipString == "" {
+		record = append(record, "NA", "NA", "NA", "NA", "NA")
+		return record
+	}
 	ip := net.ParseIP(ipString)
 	if ip == nil {
 		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
@@ -1797,6 +1820,7 @@ func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error
 	// If enddate provided with no startdate and eventTimestamp is before enddate
 	// If both startdate and enddate are provided and eventTimestamp is startdate <= eventTimestamp <= enddate
 
+	// DEPRECATED - doing this in-line at processRecords
 	return false, nil
 }
 
