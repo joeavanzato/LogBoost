@@ -440,6 +440,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	datecol := flag.String("datecol", "", "The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
 	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
 	getall := flag.Bool("getall", false, "Try to process all files in target path as raw text (unless identified with known parser) regardless of extension - use when processing standard linux files such as 'syslog'")
+	writebuffer := flag.Int("writebuffer", 100, "How many lines to queue at a time for writing to output CSV")
 	flag.Parse()
 
 	if *getall {
@@ -471,6 +472,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"enddate":         *enddate,
 		"datecol":         *datecol,
 		"dateformat":      *dateformat,
+		"writebuffer":     *writebuffer,
 	}
 
 	if *startdate != "" {
@@ -787,7 +789,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
-	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF)
+	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int))
 	for {
 		record, Ferr := newParse.Read()
 
@@ -960,7 +962,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	}
 	records := make([][]string, 0)
 	recordChannel := make(chan []string)
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF)
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
 	idx := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -1085,7 +1087,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF)
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
 	for scanner.Scan() {
 		if idx == 0 {
 			idx += 1
@@ -1149,22 +1151,30 @@ func closeChannelWhenDone(c chan []string, wg *WaitGroupCount) {
 	close(c)
 }
 
-func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File) {
+func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File, bufferSize int) {
 	// TODO - Consider having pool of routines appending records to slice [][]string and a single reader drawing from this to avoid any bottle-necks
 	defer outputF.Close()
+	tempRecords := make([][]string, 0)
 	for {
 		record, ok := <-c
 		if !ok {
 			break
+		} else if len(tempRecords) <= bufferSize {
+			tempRecords = append(tempRecords, record)
 		} else {
-			err := w.Write(record)
+			err := w.WriteAll(tempRecords)
 			if err != nil {
 				logger.Error().Msg(err.Error())
 			}
+			tempRecords = nil
 		}
 	}
+	err := w.WriteAll(tempRecords)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+	}
 	w.Flush()
-	err := w.Error()
+	err = w.Error()
 	if err != nil {
 		logger.Error().Msg(err.Error())
 	}
