@@ -15,6 +15,7 @@ log2geo can also perform reverse lookups on each unique IP address detected in t
 * Enriching with MaxMind Geo/ASN Information
 * Enriching with DNS lookups
 * Enriching with threat intelligence configuration
+* Ingesting custom intelligence files for downstream use
 * Combining outputs on per-directory basis
 * Customizing concurrency settings to fine-tune efficiency
 * Capable of handling thousands of files concurrently by default
@@ -33,7 +34,7 @@ The tool will automatically download and extract the latest version of each data
 
 Additionally, if databases are stored elsewhere on disk, a path to the directory may be provided via the 'dbdir' argument.
 
-### Commandline Arguments:
+### Commandline Arguments
 ```
 -dbdir [string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
 
@@ -100,15 +101,15 @@ Over 40 opensource feeds are included by default - when the 'buildti' flag is us
 
 Invoke with the 'useti' flag to actually use the database during enrichment processes.
 
+Adding custom files to the underlying database can be achieved using -intelfile and -inteltype flags.
+
 
 ### TODOs
 * Add capability to 'flatten' JSON columns embedded within a CSV
 * Add JSON-logging parse capabilities 
 * Add KV parsing capabilities
-* Add ability to limit number of files processed concurrently
 * Add ability to specify multiple IP address column names when processing a variety of log types simultaneously.
-* Add 'raw regex' capability to parse the entire line for the first identified IP address pattern
-
+* Export inline to parquet instead of CSV
 
 ### Performance Considerations
 log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, a minimum of 10,000 goroutines will be spawned.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
