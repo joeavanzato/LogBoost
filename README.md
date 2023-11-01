@@ -1,10 +1,26 @@
 # log2geo
  
-log2geo is a command-line utility designed to enrich CSV files (primarily from Azure AD) with IP address ASN, Country and City information provided by MaxMind GeoLite2 DBs.  It is also possible to perform live reverse-lookups via DNS to find any domains associated with the enriched IP address.
+log2geo is a command-line utility designed to enrich CSV files with IP address ASN, Country and City information provided by MaxMind GeoLite2 DBs.  
 
 While originally intended to support Azure exports, it is possible to use this to enrich any CSV data containing an IP address column to provide
 
-The tool is also capable of enriching reverse-mapped domain names for each IP address detected in the source files.  It is also capable of parsing IIS/W3C log files.  KV style logs is in the TODO list.
+In addition to parsing CSV data, log2geo can also convert a limited number of other log-formats to CSV, currently including IIS and W3C formats - generic KV log breaking is being worked on.
+
+log2geo can also perform reverse lookups on each unique IP address detected in the source files to identify related domains.  On top of this, it is possible to pull down text-based threat intelligence and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the 'type' provided in feed_config.json of the intel.
+
+### Additional Features
+* Parsing CSV, IIS, W3C into structured CSV
+* Parsing raw text files to extract and enrich detected IP address
+* Filtering outputs on specific date ranges
+* Enriching with MaxMind Geo/ASN Information
+* Enriching with DNS lookups
+* Enriching with threat intelligence configuration
+* Combining outputs on per-directory basis
+* Customizing concurrency settings to fine-tune efficiency
+* Capable of handling thousands of files concurrently by default
+* Auto-download / update of MaxMind/Threat Intelligence
+
+### Requirements
 
 To use this tool, a free API key from MaxMind is required - once an account is registered, a personal license key can be generated at https://www.maxmind.com/en/accounts/668938/license-key.
 
@@ -57,7 +73,7 @@ log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory
 log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
 log2geo.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
 log2geo.exe -logdir logs -updateti -useti -batchsize 1000 -maxgoperfile 40 -concurrentfiles 5000 -regex  -combine : Update and use threat intelligence to process CSVs from "logs" dir using the specified concurrency settings, combining final outputs and using regex to find the appropriate IP address to enrich on a line-by-line basis.
-log2geo.exe -startdate 01/02/2021 -datecol date -dateformat 2006-01-02 -convert -enddate 01/02/2023
+log2geo.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -dateformat 2006-01-02 -convert -enddate 01/04/2023 : Parse and Convert IIS logs with a date record between 1/1/23 and 1/4/23 (inclusive)
 ```
 
 ### Threat Intelligence Notes
