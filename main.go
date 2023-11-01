@@ -209,7 +209,9 @@ type ASN struct {
 }
 
 var ipv6_regex = regexp.MustCompile(`.*(?P<ip>(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))).*`)
-var ipv4_regex = regexp.MustCompile(`.*(?P<ip>((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}).*`)
+
+// var ipv4_regex = regexp.MustCompile(`.*(?P<ip>((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}).*`)
+var ipv4_regex = regexp.MustCompile(`.*?(?P<ip>\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b).*?`)
 var tenDot = net.IPNet{
 	IP:   net.ParseIP("10.0.0.0"),
 	Mask: net.CIDRMask(8, 32),
@@ -582,8 +584,8 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	}
 	waitGroup.Wait()
 	logger.Info().Msg("Done Processing all Files!")
-	logger.Info().Msgf("Input SizeTracker (Megabytes): %v", sizeTracker.inputSizeMBytes)
-	logger.Info().Msgf("Output SizeTracker (Megabytes): %v", sizeTracker.outputSizeMBytes)
+	logger.Info().Msgf("Input Size (Megabytes): %v", sizeTracker.inputSizeMBytes)
+	logger.Info().Msgf("Output Size (Megabytes): %v", sizeTracker.outputSizeMBytes)
 	return sizeTracker.actualFilesProcessed
 }
 
@@ -1119,6 +1121,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 }
 
 func isPrivateIP(ip net.IP, ipstring string) bool {
+	// TODO - Implement private net checks for IPv6
 	if tenDot.Contains(ip) || sevenTwoDot.Contains(ip) || oneNineTwoDot.Contains(ip) || ipstring == "127.0.0.1" || ipstring == "::" || ipstring == "::1" || ipstring == "0.0.0.0" {
 		return true
 	}
@@ -1140,7 +1143,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		ipString = findClientIP(logger, record[jsonColumn])
 	} else if useRegex {
 		//ip = findClientIP(logger, record[jsonColumn])
-		ipString, exists = regexFirstIPFromString(strings.Join(record, " "))
+		ipString, exists = regexFirstPublicIPFromString(strings.Join(record, " "))
 		if !exists {
 			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 			return record
@@ -1595,6 +1598,7 @@ func initializeThreatDB(logger zerolog.Logger) error {
 }
 
 func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
+	logger.Info().Msg("Ingesting Intelligence Feeds...")
 	typeMap := make(map[string]string)
 	urlMap := make(map[string]string)
 	db, _ := sql.Open("sqlite3", threatDBFile)
@@ -1607,6 +1611,7 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 		logger.Error().Msg(err.Error())
 	}
 	for _, e := range intelFiles {
+		logger.Info().Msgf("Ingesting %v", e.Name())
 		baseNameWithoutExtension := strings.TrimSuffix(filepath.Base(e.Name()), filepath.Ext(e.Name()))
 		err = ingestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
@@ -1633,7 +1638,7 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		if strings.HasPrefix(lineTrimmed, "#") {
 			continue
 		}
-		v, e := regexFirstIPFromString(lineTrimmed)
+		v, e := regexFirstPublicIPFromString(lineTrimmed)
 		if e {
 			_, err = stmt.Exec(v, iptype, url)
 			if err != nil {
@@ -1650,21 +1655,44 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 	return nil
 }
 
-func regexFirstIPFromString(input string) (string, bool) {
-	match := ipv4_regex.FindStringSubmatch(input)
+func regexFirstPublicIPFromString(input string) (string, bool) {
+	// If we find more than 1 match, check for first non-private IP
+	// If there is only one match, just return it
+	match := ipv4_regex.FindAllStringSubmatch(input, -1)
+	ipList := make([]string, 0)
 	if match != nil {
-		for i, name := range ipv4_regex.SubexpNames() {
-			if i != 0 && name != "" {
-				return match[i], true
+		for _, v := range match {
+			ipList = append(ipList, v[1])
+		}
+		// Iterate through IP matches - return the first non-private one - otherwise, just return the first one in the slice
+		for _, v := range ipList {
+			if !isPrivateIP(net.ParseIP(v), v) {
+				return v, true
 			}
 		}
+		return ipList[0], true
 	}
-	match2 := ipv6_regex.FindStringSubmatch(input)
+	// TODO - Implement private net checks for IPv6
+	match2 := ipv6_regex.FindAllStringSubmatch(input, -1)
 	if match2 != nil {
-		for i, _ := range ipv4_regex.SubexpNames() {
-			return match2[i], true
+		for _, v := range match2 {
+			return v[1], true
 		}
 	}
+	/*	if match != nil {
+			for i, name := range ipv4_regex.SubexpNames() {
+				if i != 0 && name != "" {
+
+					return match[i], true
+				}
+			}
+		}
+		match2 := ipv6_regex.FindStringSubmatch(input)
+		if match2 != nil {
+			for i, _ := range ipv4_regex.SubexpNames() {
+				return match2[i], true
+			}
+		}*/
 	return "", false
 }
 
