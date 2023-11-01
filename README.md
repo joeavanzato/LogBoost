@@ -36,34 +36,48 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 ### Commandline Arguments:
 ```
 -dbdir [string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
+
 -api [string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
+
 -logdir [string] (default="input") - specify the directory containing one or more CSV files to process
 -outputdir [string] (default="output") - specify the directory to store enriched logs - defaults to $CWD\output
+
 -ipcol [string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
 -jsoncol [string] (default="AuditData") - specify the name of a column in the CSV files storing Azure Audit JSON blobs - defaults to 'AuditData'
 -flatten [bool] (default=false) - [TODO] - flatten a nested JSON structure into a CSV
+
 -regex [bool] (default=false) - Scan each line for first IP address matche via regex rather than specifying a specific column name.
+
 -convert [bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
   - IIS - Looks for #Fields and comma-delimited values
   - W3C - Looks for #Fields and space-delimited values
   - KV - [TODO] Looks for KV-style logging based on provided -delimiter and -separator values
+-rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified - should be used with -convert.
+ 
 -separator [string] (default="=") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
 -delimiter [string] (default=" ") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
--dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
+
+-dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains.
+ 
 -maxgoperfile [int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
 -batchsize [int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
 -writebuffer [int] (default=100) - How many lines to buffer in memory before writing to CSV
 -concurrentfiles [int] (default=1000) - Limit how many files are processed concurrently.
+
 -combine [bool] (default=false) - Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.
+
 -buildti [bool] (default=false) - Build the threat intelligence database based on feed_config.json
 -updateti [bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
 -useti [bool] (default=false) - Use the threat intelligence database if it exists
+-intelfile [string] - Specify the path to an intelligence file to ingest into the threat DB (must use with -inteltype)
+-inteltype [string] - Specify the type to appear when there is a match on custom-ingested ingelligence (must use with -intelfile)
+
 -startdate [string] - Start date of data to parse - defaults to year 1800.  Can be used with or without enddate.
 -enddate [string] - End date of data to parse - defaults to year 2300.  Can be used with or without startdate.
 -datecol [string] - Name of the column/header that contains the date to parse.  Must be provided with startdate/enddate.  Will check for either full equality or if the scanned column name contains the provided string - so be specific.
 -dateformat [string] - Provide the format of the datecol data in golang style ("2006-01-02T15:04:05Z") - rearrange as appropriate (see example). Must be provided with startdate/enddate.
--rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified
--getall [bool] - Look for any type of file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
+
+-getall [bool] - Look for any file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
 ```
 
 ### Example Usage
