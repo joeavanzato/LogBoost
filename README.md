@@ -41,6 +41,10 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -buildti [bool] (default=false) - Build the threat intelligence database based on feed_config.json
 -updateti [bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
 -useti [bool] (default=false) - Use the threat intelligence database if it exists
+-startdate [string] - Start date of data to parse - defaults to year 1800.  Can be used with or without enddate.
+-enddate [string] - End date of data to parse - defaults to year 2300.  Can be used with or without startdate.
+-datecol [string] - Name of the column/header that contains the date to parse.  Must be provided with startdate/enddate.
+-dateformat [string] - Provide the format of the datecol data in golang style ("2006-01-02T15:04:05Z") - rearrange as appropriate (see example). Must be provided with startdate/enddate.
 ```
 
 ### Example Usage
@@ -53,6 +57,7 @@ log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory
 log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
 log2geo.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
 log2geo.exe -logdir logs -updateti -useti -batchsize 1000 -maxgoperfile 40 -concurrentfiles 5000 -regex  -combine : Update and use threat intelligence to process CSVs from "logs" dir using the specified concurrency settings, combining final outputs and using regex to find the appropriate IP address to enrich on a line-by-line basis.
+log2geo.exe -startdate 01/02/2021 -datecol date -dateformat 2006-01-02 -convert -enddate 01/02/2023
 ```
 
 ### Threat Intelligence Notes
