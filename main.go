@@ -243,6 +243,8 @@ var oneNineTwoDot = net.IPNet{
 	Mask: net.CIDRMask(16, 32),
 }
 
+var getAllFiles = false
+
 func setupLogger() zerolog.Logger {
 	logFileName := logFile
 	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
@@ -436,7 +438,12 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	enddate := flag.String("enddate", "", "Parse and use provided value as an end date for log outputs.  If no start date is provided, will find all events from this point prior.")
 	datecol := flag.String("datecol", "", "The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
 	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
+	getall := flag.Bool("getall", false, "Try to process all files in target path as raw text (unless identified with known parser) regardless of extension - use when processing standard linux files such as 'syslog'")
 	flag.Parse()
+
+	if *getall {
+		getAllFiles = true
+	}
 
 	arguments := map[string]any{
 		"dbdir":           *dbDir,
@@ -553,7 +560,10 @@ func findLogsToProcess(arguments map[string]any, logger zerolog.Logger) ([]strin
 }
 
 func visit(path string, di fs.DirEntry, err error) error {
-	if strings.HasSuffix(strings.ToLower(path), ".csv") || strings.HasSuffix(strings.ToLower(path), ".log") || strings.HasSuffix(strings.ToLower(path), ".txt") {
+	if di.IsDir() {
+		return nil
+	}
+	if strings.HasSuffix(strings.ToLower(path), ".csv") || strings.HasSuffix(strings.ToLower(path), ".log") || strings.HasSuffix(strings.ToLower(path), ".txt") || getAllFiles {
 		logsToProcess = append(logsToProcess, path)
 	}
 	return nil
@@ -603,7 +613,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	for _, file := range logFiles {
 		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
 		base := strings.ToLower(filepath.Base(file))
-		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) {
+		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) && !getAllFiles {
 			// If the file is not a CSV and we have not specified 'convert' argument, skip it.
 			// TODO - Should this just be default?
 			continue
@@ -896,6 +906,14 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			}
 		}
 		// Add KV style parsing logic here or whatever other methods.
+	} else if getAllFiles {
+		// If we specify getall flag and do not detect a previous parser match, try to parse the file as raw text
+		fileProcessed = true
+		err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+		}
+
 	}
 	if fileProcessed {
 		OfileStat, ferr := os.Stat(outputFile)
