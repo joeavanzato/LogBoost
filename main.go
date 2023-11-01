@@ -414,9 +414,10 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	updateti := flag.Bool("updateti", false, "Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json")
 	rawtxt := flag.Bool("rawtxt", false, "When -convert is enabled and there is no known parsing technique for the provided file, treat the entire line as a single column named raw and use regex to find the first IP to enrich.")
 	useti := flag.Bool("useti", false, "Use the threat intelligence database if it exists")
-	startdate := flag.String("startdate", "", "[TODO] Parse and use provided value as a start date for log outputs.  If no end date is provided, will find all events from this point onwards.")
-	enddate := flag.String("enddate", "", "[TODO] Parse and use provided value as an end date for log outputs.  If no start date is provided, will find all events from this point prior.")
-	datecol := flag.String("datecol", "", "[TODO] The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
+	startdate := flag.String("startdate", "", "Parse and use provided value as a start date for log outputs.  If no end date is provided, will find all events from this point onwards.")
+	enddate := flag.String("enddate", "", "Parse and use provided value as an end date for log outputs.  If no start date is provided, will find all events from this point prior.")
+	datecol := flag.String("datecol", "", "The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
+	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
 	flag.Parse()
 
 	arguments := map[string]any{
@@ -443,6 +444,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"startdate":       *startdate,
 		"enddate":         *enddate,
 		"datecol":         *datecol,
+		"dateformat":      *dateformat,
 	}
 
 	if *startdate != "" {
@@ -454,7 +456,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		arguments["startdate"] = startimestamp
 	}
 	if *enddate != "" {
-		endtimestamp, err := time.Parse("01/02/2006", *startdate)
+		endtimestamp, err := time.Parse("01/02/2006", *enddate)
 		if err != nil {
 			logger.Error().Msg("Could not parse provided enddate - ensure format is MM/DD/YYYY")
 			return make(map[string]any), err
@@ -464,6 +466,14 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	if (*startdate != "" || *enddate != "") && *datecol == "" {
 		logger.Error().Msg("No date column provided - cannot use startdate/enddate without providing the column to use for filtering!")
 		return make(map[string]any), errors.New("No date column provided - cannot use startdate/enddate without providing the column to use for filtering!")
+	}
+	if *startdate == "" && *enddate == "" && *datecol != "" {
+		logger.Error().Msg("No startdate or enddate provided - cannot use datecol without providing at least one date to filter!")
+		return make(map[string]any), errors.New("No startdate or enddate provided - cannot use datecol without providing at least one date to filter!")
+	}
+	if *datecol != "" && *dateformat == "" {
+		logger.Error().Msg("Must provide a date format to use when parsing via -dateformat!")
+		return make(map[string]any), errors.New("Must provide a valid date format to use when parsing!")
 	}
 
 	return arguments, nil
@@ -717,6 +727,20 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		return
 	}
 
+	tempArgs["dateindex"] = -1
+	if arguments["datecol"].(string) != "" {
+		tempArgs["dateindex"] = findDateHeaderIndex(headers, arguments["datecol"].(string))
+		tempArgs["dateformat"] = arguments["dateformat"].(string)
+		_, ok := arguments["startdate"].(time.Time)
+		if ok {
+			tempArgs["startdate"] = arguments["startdate"].(time.Time)
+		}
+		_, ok = arguments["enddate"].(time.Time)
+		if ok {
+			tempArgs["enddate"] = arguments["enddate"].(time.Time)
+		}
+	}
+
 	idx := 0
 	var fileWG WaitGroupCount
 	recordChannel := make(chan []string)
@@ -947,6 +971,16 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	return nil
 }
 
+func findDateHeaderIndex(headers []string, targetCol string) int {
+	// Check a slice for a target - if it exists, return the index, otherwise, -1
+	for i, v := range headers {
+		if v == targetCol {
+			return i
+		}
+	}
+	return -1
+}
+
 func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
@@ -973,6 +1007,20 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 			break
 		}
 	}
+	tempArgs["dateindex"] = -1
+	if arguments["datecol"].(string) != "" {
+		tempArgs["dateindex"] = findDateHeaderIndex(headers, arguments["datecol"].(string))
+		tempArgs["dateformat"] = arguments["dateformat"].(string)
+		_, ok := arguments["startdate"].(time.Time)
+		if ok {
+			tempArgs["startdate"] = arguments["startdate"].(time.Time)
+		}
+		_, ok = arguments["enddate"].(time.Time)
+		if ok {
+			tempArgs["enddate"] = arguments["enddate"].(time.Time)
+		}
+	}
+
 	headers = append(headers, geoFields...)
 	err = writer.Write(headers)
 	if err != nil {
@@ -1079,7 +1127,32 @@ func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger,
 func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any) {
 	defer waitGroup.Done()
 	defer tracker.SubJob()
+	sd, sdexist := tempArgs["startdate"].(time.Time)
+	ed, edexist := tempArgs["enddate"].(time.Time)
+	startDate, _ := time.Parse("2006-01-02", "1800-01-01")
+	if sdexist {
+		startDate = sd
+	}
+	endDate, _ := time.Parse("2006-01-02", "2300-01-01")
+	if edexist {
+		endDate = ed
+	}
+
 	for _, record := range records {
+		if tempArgs["dateindex"] != -1 {
+			// we are using date filtering and have a successfully identified index column to use
+			recordTimestamp, err := time.Parse(tempArgs["dateformat"].(string), record[tempArgs["dateindex"].(int)])
+			if err != nil {
+				logger.Error().Msgf("Could not parse timestamp (%v) using provided layout (%v)!", tempArgs["dateformat"].(string), record[tempArgs["dateindex"].(int)])
+			}
+			if err == nil {
+				if !(recordTimestamp.Before(endDate) && recordTimestamp.After(startDate)) {
+					//fmt.Printf("Start Date: %v, End Date %v, Timestamp: %v", startDate, endDate, recordTimestamp)
+					continue
+				}
+			}
+		}
+
 		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS, tempArgs)
 		channel <- record
 	}
