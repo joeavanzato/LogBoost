@@ -441,6 +441,9 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
 	getall := flag.Bool("getall", false, "Try to process all files in target path as raw text (unless identified with known parser) regardless of extension - use when processing standard linux files such as 'syslog'")
 	writebuffer := flag.Int("writebuffer", 100, "How many lines to queue at a time for writing to output CSV")
+	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype.")
+	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.")
+
 	flag.Parse()
 
 	if *getall {
@@ -473,6 +476,13 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"datecol":         *datecol,
 		"dateformat":      *dateformat,
 		"writebuffer":     *writebuffer,
+		"intelfile":       *intelfile,
+		"inteltype":       *inteltype,
+	}
+
+	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {
+		logger.Error().Msg("Cannot use -intelfile without -inteltype and vice-versa!")
+		return make(map[string]any), errors.New("Cannot use -intelfile without -inteltype and vice-versa!\"")
 	}
 
 	if *startdate != "" {
@@ -1757,11 +1767,19 @@ func initializeThreatDB(logger zerolog.Logger) error {
 	return nil
 }
 
+func openDBConnection(logger zerolog.Logger) (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", threatDBFile)
+	return db, err
+}
+
 func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	logger.Info().Msg("Ingesting Intelligence Feeds...")
 	typeMap := make(map[string]string)
 	urlMap := make(map[string]string)
-	db, _ := sql.Open("sqlite3", threatDBFile)
+	db, err := openDBConnection(logger)
+	if err != nil {
+		return err
+	}
 	for i := 0; i < len(feeds.Feeds); i++ {
 		typeMap[feeds.Feeds[i].Name] = feeds.Feeds[i].Type
 		urlMap[feeds.Feeds[i].Name] = feeds.Feeds[i].URL
@@ -1771,7 +1789,6 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 		logger.Error().Msg(err.Error())
 	}
 	for _, e := range intelFiles {
-		logger.Info().Msgf("Ingesting %v", e.Name())
 		baseNameWithoutExtension := strings.TrimSuffix(filepath.Base(e.Name()), filepath.Ext(e.Name()))
 		err = ingestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
@@ -1783,6 +1800,7 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 }
 
 func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger zerolog.Logger) error {
+	logger.Info().Msgf("Ingesting %v", inputFile)
 	fileLines := ReadFileToSlice(inputFile, logger)
 	tx, err := db.Begin()
 	if err != nil {
@@ -1806,12 +1824,10 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 			}
 		}
 	}
-
 	err = tx.Commit()
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -1866,6 +1882,45 @@ func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error
 	return false, nil
 }
 
+type threatsCatReport struct {
+	category string
+	count    int
+}
+
+func summarizeThreatDB(logger zerolog.Logger) {
+	db, err := openDBConnection(logger)
+	logger.Info().Msg("Summarized ThreatDB Info")
+	if err != nil {
+		logger.Error().Msg("Could not initialize access to threat DB!")
+		return
+	}
+	query := "SELECT COUNT(*) as c FROM ips"
+	rows, err := db.Query(query)
+	if err != nil {
+		return
+	}
+	var ipCount string
+	for rows.Next() {
+		err = rows.Scan(&ipCount)
+	}
+	rows.Close()
+	logger.Info().Msgf("Total Unique IPs: %v", ipCount)
+
+	query_types := "SELECT category, COUNT(*) as count FROM ips GROUP BY category"
+	rows_types, err := db.Query(query_types)
+	if err != nil {
+		return
+	}
+	for rows_types.Next() {
+		tmp := threatsCatReport{}
+		if err := rows_types.Scan(&tmp.category, &tmp.count); err != nil {
+			return
+		}
+		logger.Info().Msgf("Category %v: %v", tmp.category, tmp.count)
+	}
+
+}
+
 func main() {
 	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
 	start := time.Now()
@@ -1880,6 +1935,26 @@ func main() {
 		if TIBuildErr != nil {
 			logger.Error().Msg(TIBuildErr.Error())
 		}
+		summarizeThreatDB(logger)
+		return
+	}
+	if arguments["intelfile"].(string) != "" {
+		db, err := openDBConnection(logger)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		if FileExists(arguments["intelfile"].(string)) {
+			err = ingestFile(arguments["intelfile"].(string), arguments["inteltype"].(string), "", db, logger)
+			if err != nil {
+				logger.Error().Msg(err.Error())
+				return
+			}
+		} else {
+			logger.Error().Msgf("Could not find specified file: %v", arguments["intelfile"].(string))
+			return
+		}
+		summarizeThreatDB(logger)
 		return
 	}
 
@@ -1890,7 +1965,9 @@ func main() {
 			return
 		}
 		useIntel = true
+		summarizeThreatDB(logger)
 	}
+
 	//makeTorList(arguments, logger)
 	APIerr := setAPIUrls(arguments, logger)
 	if APIerr != nil {
