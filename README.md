@@ -52,6 +52,7 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains. 
 -maxgoperfile [int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
 -batchsize [int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
+-writebuffer [int] (default=100) - How many lines to buffer in memory before writing to CSV
 -concurrentfiles [int] (default=1000) - Limit how many files are processed concurrently.
 -combine [bool] (default=false) - Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.
 -buildti [bool] (default=false) - Build the threat intelligence database based on feed_config.json
@@ -59,8 +60,10 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -useti [bool] (default=false) - Use the threat intelligence database if it exists
 -startdate [string] - Start date of data to parse - defaults to year 1800.  Can be used with or without enddate.
 -enddate [string] - End date of data to parse - defaults to year 2300.  Can be used with or without startdate.
--datecol [string] - Name of the column/header that contains the date to parse.  Must be provided with startdate/enddate.
+-datecol [string] - Name of the column/header that contains the date to parse.  Must be provided with startdate/enddate.  Will check for either full equality or if the scanned column name contains the provided string - so be specific.
 -dateformat [string] - Provide the format of the datecol data in golang style ("2006-01-02T15:04:05Z") - rearrange as appropriate (see example). Must be provided with startdate/enddate.
+-rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified
+-getall [bool] - Look for any type of file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
 ```
 
 ### Example Usage
