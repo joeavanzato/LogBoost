@@ -27,6 +27,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 // TODO - Tor Node Check
@@ -1014,10 +1015,21 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	return nil
 }
 
+func removeSpace(s string) string {
+	rr := make([]rune, 0, len(s))
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			rr = append(rr, r)
+		}
+	}
+	return string(rr)
+}
+
 func findDateHeaderIndex(headers []string, targetCol string) int {
 	// Check a slice for a target - if it exists, return the index, otherwise, -1
 	for i, v := range headers {
-		if v == targetCol {
+		v := strings.ReplaceAll(v, "\"", "")
+		if v == targetCol || strings.Contains(v, targetCol) {
 			return i
 		}
 	}
