@@ -200,7 +200,7 @@ func (wg *WaitGroupCount) GetCount() int {
 
 // ////
 
-var geoFields = []string{"_ASN", "_Country", "_City", "Domains", "ThreatCategory"}
+var geoFields = []string{"l2g_IP", "l2g_ASN", "l2g_Country", "l2g_City", "l2g_Domains", "l2g_ThreatCategory"}
 
 // https://github.com/oschwald/geoip2-golang/blob/main/reader.go
 // TODO - Review potential MaxMind fields to determine usefulness of any others - really depends on the 'type' of DB we have access to
@@ -418,7 +418,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	column := flag.String("ipcol", "IP address", "Will check for a column with this name to find IP addresses for enrichment. (Defaults to 'IP Address' per Azure defaults)")
 	jsoncolumn := flag.String("jsoncol", "AuditData", "Will check for a column with this name to find the JSON Audit blob for enrichment. (Defaults to 'AuditData' per Azure defaults)")
 	flatten := flag.Bool("flatten", false, "[TODO - Does not function properly with events that have dynamic keys] - If enabled, will flatten JSON fields using the separator '_'")
-	regex := flag.Bool("regex", false, "[TODO] - If enabled, will use regex against the entire line to find the first IP address present to enrich")
+	regex := flag.Bool("regex", false, "If enabled, will use regex against the entire line to find the first IP address present to enrich")
 	convert := flag.Bool("convert", false, "If enabled, will check for additional .log or .txt files in the logs dir, convert them to an intermediate CSV and process as normal.  Capable of parsing IIS, W3C or k:v style logs - for k:v please provide separator value via '-separator' flag and delimiter as '-delimiter' flag.")
 	api := flag.String("api", "", "Provide your MaxMind API Key - if not provided, will check for environment variable 'MM_API' and then 'mm_api.txt' in cwd, in that order.")
 	separator := flag.String("separator", "=", "[TODO] Use provided value as separator for KV logging.")
@@ -579,13 +579,13 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	}
 	maxConcurrentFiles := arguments["concurrentfiles"].(int)
 	tempArgs := make(map[string]any)
-	tempArgs["dateindex"] = -1
 
 	if useIntel {
 		db, _ := sql.Open("sqlite3", threatDBFile)
 		tempArgs["db"] = db
 	}
 	tempArgs["dateformat"] = arguments["dateformat"].(string)
+	tempArgs["datecol"] = arguments["datecol"].(string)
 	_, ok := arguments["startdate"].(time.Time)
 	if ok {
 		tempArgs["startdate"] = arguments["startdate"].(time.Time)
@@ -598,6 +598,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	} else {
 		tempArgs["enddate"] = ""
 	}
+	//startDate, endDate := getDateBounds(tempArgs)
 
 	for _, file := range logFiles {
 		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
@@ -954,7 +955,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			records = nil
 			break
 		}
@@ -974,14 +975,14 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			}
 			records = nil
 		}
@@ -990,7 +991,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, 0)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	return nil
 }
@@ -1032,7 +1033,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		}
 	}
 	dateindex := -1
-	if arguments["datecol"].(string) != "" {
+	if tempArgs["datecol"].(string) != "" {
 		dateindex = findDateHeaderIndex(headers, arguments["datecol"].(string))
 	}
 
@@ -1156,18 +1157,17 @@ func getDateBounds(tempArgs map[string]any) (time.Time, time.Time) {
 func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any, dateindex int) {
 	defer waitGroup.Done()
 	defer tracker.SubJob()
-	startDate, endDate := getDateBounds(tempArgs)
 
 	for _, record := range records {
-		if tempArgs["dateindex"].(int) != -1 {
+		if dateindex != -1 {
 			// we are using date filtering and have a successfully identified index column to use
-			recordTimestamp, err := time.Parse(tempArgs["dateformat"].(string), record[tempArgs["dateindex"].(int)])
+			recordTimestamp, err := time.Parse(tempArgs["dateformat"].(string), record[dateindex])
 			if err != nil {
-				logger.Error().Msgf("Could not parse timestamp (%v) using provided layout (%v)!", tempArgs["dateformat"].(string), record[tempArgs["dateindex"].(int)])
+				logger.Error().Msgf("Could not parse timestamp (%v) using provided layout (%v)!", tempArgs["dateformat"].(string), record[dateindex])
 			}
 			if err == nil {
-				if !(recordTimestamp.Before(endDate) && recordTimestamp.After(startDate)) {
-					//fmt.Printf("Start Date: %v, End Date %v, Timestamp: %v", startDate, endDate, recordTimestamp)
+				if !(recordTimestamp.Before(tempArgs["enddate"].(time.Time)) && recordTimestamp.After(tempArgs["startdate"].(time.Time))) {
+					//fmt.Printf("SKIP: Start Date: %v, End Date %v, Timestamp: %v \n", tempArgs["enddate"].(time.Time), tempArgs["startdate"].(time.Time), recordTimestamp)
 					continue
 				}
 			}
@@ -1260,33 +1260,35 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString, exists = regexFirstPublicIPFromString(strings.Join(record, " "))
 		if !exists {
-			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 			return record
 		}
 	} else {
 		// Could not identify which a column storing IP address column or JSON blob and not using regex to find an IP
-		record = append(record, "NA", "NA", "NA", "NA", "NA")
+		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
 	if ipString == "" {
-		record = append(record, "NA", "NA", "NA", "NA", "NA")
+		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
 	ip := net.ParseIP(ipString)
 	if ip == nil {
-		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 		return record
 	}
 	if isPrivateIP(ip, ipString) {
-		record = append(record, "PVT", "PVT", "PVT", "PVT", "PVT")
+		record = append(record, ipString, "PVT", "PVT", "PVT", "PVT", "PVT")
 		return record
 	}
 
 	ipStruct, IPCacheExists := CheckIP(ipString)
 	if IPCacheExists {
-		record = append(record, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, strings.Join(ipStruct.Domains, "|"), ipStruct.ThreatCat)
+		record = append(record, ipString, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, strings.Join(ipStruct.Domains, "|"), ipStruct.ThreatCat)
 		return record
 	}
+
+	record = append(record, ipString)
 
 	ipTmpStruct := IPCache{
 		ASNOrg:    "",
