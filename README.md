@@ -6,7 +6,11 @@ While originally intended to support Azure exports, it is possible to use this t
 
 In addition to parsing CSV data, log2geo can also convert a limited number of other log-formats to CSV, currently including IIS and W3C formats - generic KV log breaking is being worked on.
 
-log2geo can also perform reverse lookups on each unique IP address detected in the source files to identify related domains.  On top of this, it is possible to pull down text-based threat intelligence and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the 'type' provided in feed_config.json of the intel.
+log2geo can also perform reverse lookups on each unique IP address detected in the source files to identify related domains.  
+
+On top of this, it is possible to pull down text-based threat intelligence and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the 'type' provided in feed_config.json of the intel.
+
+All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
 
 ### Additional Features
 * Parsing CSV, IIS, W3C into structured CSV
@@ -72,6 +76,7 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -useti [bool] (default=false) - Use the threat intelligence database if it exists
 -intelfile [string] - Specify the path to an intelligence file to ingest into the threat DB (must use with -inteltype)
 -inteltype [string] - Specify the type to appear when there is a match on custom-ingested ingelligence (must use with -intelfile)
+-summarizeti [bool] - Summarize the existing threat database
 
 -startdate [string] - Start date of data to parse - defaults to year 1800.  Can be used with or without enddate.
 -enddate [string] - End date of data to parse - defaults to year 2300.  Can be used with or without startdate.
