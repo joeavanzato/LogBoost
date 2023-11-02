@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,7 +143,7 @@ func initializeThreatDB(logger zerolog.Logger) error {
 	file.Close()
 	db, _ := sql.Open("sqlite3", threatDBFile)
 	defer db.Close()
-	createTableStatement := `CREATE TABLE ips ("id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "ip" TEXT, "category" TEXT, UNIQUE(ip));`
+	createTableStatement := `CREATE TABLE ips ("ip" TEXT PRIMARY KEY, "category" TEXT, UNIQUE(ip)) WITHOUT ROWID;`
 	_, exeE := db.Exec(createTableStatement)
 	if exeE != nil {
 		logger.Error().Msg(CreateErr.Error())
@@ -174,6 +175,11 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	}
 	for _, e := range intelFiles {
 		baseNameWithoutExtension := strings.TrimSuffix(filepath.Base(e.Name()), filepath.Ext(e.Name()))
+		_, exist := typeMap[baseNameWithoutExtension]
+		if !exist {
+			// Indicates the file is not one we downloaded in this process - some exterrnal intel or something else.
+			continue
+		}
 		err = ingestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -202,6 +208,13 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		}
 		v, e := regexFirstPublicIPFromString(lineTrimmed)
 		if e {
+			ipParse := net.ParseIP(v)
+			if ipParse == nil {
+				continue
+			}
+			if isPrivateIP(ipParse, v) {
+				continue
+			}
 			ingestRecord(v, iptype, stmt, logger)
 		}
 	}
@@ -213,10 +226,13 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 }
 
 func ingestRecord(ip string, category string, stmt *sql.Stmt, logger zerolog.Logger) {
-	_, err := stmt.Exec(ip, category)
-	if err != nil {
-		logger.Error().Msg(err.Error())
+	if ip != "" && category != "" {
+		_, err := stmt.Exec(ip, category)
+		if err != nil {
+			logger.Error().Msg(err.Error())
+		}
 	}
+
 }
 
 func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
