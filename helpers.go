@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"github.com/rs/zerolog"
 	"io"
@@ -13,11 +12,37 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
+
+func setupLogger() zerolog.Logger {
+	logFileName := logFile
+	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
+	if err != nil {
+		_, err := fmt.Fprintf(os.Stderr, "Couldn't Initialize Log File: %s", err)
+		if err != nil {
+			panic(nil)
+		}
+		panic(err)
+	}
+	cw := zerolog.ConsoleWriter{
+		Out:        os.Stdout,
+		TimeFormat: time.RFC3339,
+		FormatLevel: func(i interface{}) string {
+			return strings.ToUpper(fmt.Sprintf("[%s]", i))
+		},
+	}
+	cw.NoColor = true
+	mw := io.MultiWriter(cw, logFile)
+	logger := zerolog.New(mw).Level(zerolog.TraceLevel)
+	logger = logger.With().Timestamp().Logger()
+	return logger
+}
 
 // TODO - Need to determine best approach to dynamic flattening
 // Option 1 - Read second row in file, expand JSON blob and use that as the baseline for what keys are allowed - throw-out extraneous keys - faster but possible data-loss, good if keys are universal
@@ -156,15 +181,9 @@ func FileExists(filename string) bool {
 }
 
 func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
-	combinedOutputDir := "combined_outputs"
 	logger.Info().Msg("Combining Outputs per Directory")
 	logger.Info().Msg("Note: The first file in each directory will provide the headers for all subsequent files - those that have a mismatch will be logged and skipped.")
 	fileDirMap := make(map[string][]string)
-
-	if err := os.Mkdir(combinedOutputDir, 0755); err != nil && !errors.Is(err, os.ErrExist) {
-		logger.Error().Msg(err.Error())
-		return err
-	}
 
 	err := filepath.WalkDir(arguments["outputdir"].(string), func(path string, d fs.DirEntry, err error) error {
 		if !d.IsDir() {
@@ -215,6 +234,29 @@ func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 	MainWaiter.Wait()
 	logger.Info().Msg("Done!")
 	return nil
+}
+
+func combineWriterListen(outputF *os.File, writer *csv.Writer, c chan []string, logger zerolog.Logger, MainWaiter *sync.WaitGroup) {
+	// Will receive a handle to a pre-setup CSV writer and listen on a channel for incoming records to write, breaking when the channel is closed.
+	defer MainWaiter.Done()
+	defer outputF.Close()
+	for {
+		record, ok := <-c
+		if !ok {
+			break
+		} else {
+			err := writer.Write(record)
+			if err != nil {
+				logger.Error().Msg(err.Error())
+			}
+		}
+	}
+	writer.Flush()
+	err := writer.Error()
+	if err != nil {
+		logger.Error().Msg(err.Error())
+	}
+
 }
 
 func regexFirstPublicIPFromString(input string) (string, bool) {
@@ -280,4 +322,77 @@ func ReadFileToSlice(filename string, logger zerolog.Logger) []string {
 	}
 	return lines
 	//reader := bufio.NewReader(file)
+}
+
+func findTargetIndexInSlice(headers []string, targetCol string) int {
+	// Check a slice for a target string - if it exists, return the index, otherwise, -1
+	for i, v := range headers {
+		v := strings.ReplaceAll(v, "\"", "")
+		if v == targetCol || strings.Contains(v, targetCol) {
+			return i
+		}
+	}
+	return -1
+}
+
+func closeChannelWhenDone(c chan []string, wg *WaitGroupCount) {
+	// Waits on a WaitGroup to conclude and closes the associated channel when done - used to synchronize waitgroups sending to a channel
+	wg.Wait()
+	close(c)
+}
+
+func readAndSendToChannel(csvFile string, c chan []string, waiter *WaitGroupCount, logger zerolog.Logger, initialHeaders []string) {
+	defer waiter.Done()
+	inputHeaderFile, err := openInput(csvFile)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	defer inputHeaderFile.Close()
+	idx := 0
+	reader := csv.NewReader(inputHeaderFile)
+	for {
+		record, Ferr := reader.Read()
+
+		if Ferr == io.EOF {
+			break
+		}
+		if Ferr != nil {
+			logger.Error().Msgf("Error Reading Record in %v: %v", csvFile, Ferr.Error())
+			continue
+		}
+		if idx == 0 {
+			if !reflect.DeepEqual(initialHeaders, record) {
+				logger.Error().Msgf("Header Mismatch - Skipping: %v", csvFile)
+				return
+			}
+			idx += 1
+			continue
+		}
+		c <- record
+	}
+}
+
+func removeSpace(s string) string {
+	rr := make([]rune, 0, len(s))
+	for _, r := range s {
+		if !unicode.IsSpace(r) {
+			rr = append(rr, r)
+		}
+	}
+	return string(rr)
+}
+
+func getDateBounds(tempArgs map[string]any) (time.Time, time.Time) {
+	startDate, _ := time.Parse("2006-01-02", "1800-01-01")
+	endDate, _ := time.Parse("2006-01-02", "2300-01-01")
+	sd, sdexist := tempArgs["startdate"].(time.Time)
+	ed, edexist := tempArgs["enddate"].(time.Time)
+	if sdexist {
+		startDate = sd
+	}
+	if edexist {
+		endDate = ed
+	}
+	return startDate, endDate
 }
