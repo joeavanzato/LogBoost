@@ -238,11 +238,6 @@
 			"type": "spam"
 		},
 		{
-			"name": "hoshsadiq_github_mining",
-			"url": "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt",
-			"type": "bitcoin"
-		},
-		{
 			"name": "kriskintel_malicious_ips",
 			"url": "https://kriskintel.com/feeds/ktip_malicious_Ips.txt",
 			"type": "suspicious"
@@ -433,9 +428,69 @@
 			"type": "bot"
 		},
 		{
-			"name": "mirai_1000",
-			"url": "https://mirai.security.gives/data/ip_list.txt",
+			"name": "ssl_blacklist_aggressive",
+			"url": "https://sslbl.abuse.ch/blacklist/sslipblacklist_aggressive.txt",
 			"type": "bot"
+		},
+		{
+			"name": "criticalpathsecurity_illuminate",
+			"url": "https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/illuminate.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "criticalpathsecurity_compromised",
+			"url": "https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/compromised-ips.txt",
+			"type": "bot"
+		},
+		{
+			"name": "criticalpathsecurity_sans",
+			"url": "https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/sans.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "rodanmaharjan_c2_1",
+			"url": "https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/C2%20IOC.txt",
+			"type": "c2"
+		},
+		{
+			"name": "rodanmaharjan_c2_2",
+			"url": "https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/CobaltStrike.txt",
+			"type": "c2"
+		},
+		{
+			"name": "rodanmaharjan_c2_3",
+			"url": "https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/Malicious%20IP.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "rodanmaharjan_c2_4",
+			"url": "https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/blackcat%20ransomware.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "rodanmaharjan_c2_5",
+			"url": "https://raw.githubusercontent.com/rodanmaharjan/ThreatIntelligence/main/Mirai.txt",
+			"type": "bot"
+		},
+		{
+			"name": "rst_threats_all",
+			"url": "https://raw.githubusercontent.com/elliotwutingfeng/rstthreatsall/main/ioc_ip_short_all.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "digitalside_osint",
+			"url": "https://osint.digitalside.it/Threat-Intel/lists/latestips.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "neo23x0_c2",
+			"url": "https://raw.githubusercontent.com/Neo23x0/signature-base/master/iocs/c2-iocs.txt",
+			"type": "c2"
+		},
+		{
+			"name": "lopez_tweetfeed_month",
+			"url": "https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv",
+			"type": "suspicious"
 		}
 	]
 }
