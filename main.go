@@ -1,118 +1,22 @@
 package main
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
-	"io"
 	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 )
-
-func setupLogger() zerolog.Logger {
-	logFileName := logFile
-	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0666)
-	if err != nil {
-		_, err := fmt.Fprintf(os.Stderr, "Couldn't Initialize Log File: %s", err)
-		if err != nil {
-			panic(nil)
-		}
-		panic(err)
-	}
-	cw := zerolog.ConsoleWriter{
-		Out:        os.Stdout,
-		TimeFormat: time.RFC3339,
-		FormatLevel: func(i interface{}) string {
-			return strings.ToUpper(fmt.Sprintf("[%s]", i))
-		},
-	}
-	cw.NoColor = true
-	mw := io.MultiWriter(cw, logFile)
-	logger := zerolog.New(mw).Level(zerolog.TraceLevel)
-	logger = logger.With().Timestamp().Logger()
-	return logger
-}
-
-func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) {
-	dir, err := os.Getwd()
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	if arguments["dbdir"].(string) != "" {
-		dir = arguments["dbdir"].(string)
-	}
-
-	logger.Info().Msgf("Checking Directory '%v' for MaxMind DBs", dir)
-	globPattern := fmt.Sprintf("%v\\**\\GeoLite2-*.mmdb", dir)
-	entries, err := filepath.Glob(globPattern)
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-
-	for _, e := range entries {
-		if strings.HasSuffix(e, maxMindFiles["ASN"]) {
-			maxMindStatus["ASN"] = true
-			maxMindFileLocations["ASN"] = e
-		} else if strings.HasSuffix(e, maxMindFiles["City"]) {
-			maxMindStatus["City"] = true
-			maxMindFileLocations["City"] = e
-		} else if strings.HasSuffix(e, maxMindFiles["Country"]) {
-			maxMindStatus["Country"] = true
-			maxMindFileLocations["Country"] = e
-		}
-	}
-
-	for k, v := range maxMindStatus {
-		if v == true {
-			logger.Info().Msgf("Found %v DB file at: %v", k, maxMindFileLocations[k])
-		} else {
-			logger.Info().Msgf("Could not find %v DB at %v\\%v, downloading!", k, dir, maxMindFiles[k])
-			gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
-			// Download It First
-			err := downloadFile(logger, maxMindURLs[k], gzFile, k)
-			if err != nil {
-				logger.Error().Msg("Problem Downloading File!")
-				logger.Error().Msg(err.Error())
-				continue
-			}
-			// If successful, extract
-			r, err := os.Open(gzFile)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				continue
-			}
-			err = ExtractTarGz(r, logger, dir)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				continue
-			}
-			// Once we extract, we need to find the actual mmdb file which will be located within a newly created directory of the naming format GeoLite2-KEY_*
-			globPattern := fmt.Sprintf("%v\\GeoLite2-%v_*\\GeoLite2-%v.mmdb", dir, k, k)
-			file, err := filepath.Glob(globPattern)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				continue
-			}
-			maxMindFileLocations[k] = file[0]
-		}
-	}
-}
 
 func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
@@ -128,7 +32,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	delimiter := flag.String("delimiter", ",", "[TODO] Use provided value as KV delimiter for KV logging.")
 	dns := flag.Bool("dns", false, "If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
 	maxgoperfile := flag.Int("maxgoperfile", 20, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
-	batchsize := flag.Int("batchsize", 100, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
+	batchsize := flag.Int("batchsize", 500, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
 	concurrentfiles := flag.Int("concurrentfiles", 100, "Maximum number of files to process concurrently.")
 	combine := flag.Bool("combine", false, "Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.")
 	buildti := flag.Bool("buildti", false, "Build the threat intelligence database based on feed_config.json")
@@ -140,9 +44,10 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	datecol := flag.String("datecol", "", "The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
 	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
 	getall := flag.Bool("getall", false, "Try to process all files in target path as raw text (unless identified with known parser) regardless of extension - use when processing standard linux files such as 'syslog'")
-	writebuffer := flag.Int("writebuffer", 100, "How many lines to queue at a time for writing to output CSV")
+	writebuffer := flag.Int("writebuffer", 2000, "How many lines to queue at a time for writing to output CSV")
 	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype.")
 	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.")
+	summarizeti := flag.Bool("summarizeti", false, "Summarize the contents of the ThreatDB, if it exists.")
 
 	flag.Parse()
 
@@ -178,6 +83,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"writebuffer":     *writebuffer,
 		"intelfile":       *intelfile,
 		"inteltype":       *inteltype,
+		"summarizeti":     *summarizeti,
 	}
 
 	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {
@@ -215,42 +121,6 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	}
 
 	return arguments, nil
-}
-
-func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
-	apiKey := ""
-	if arguments["api"].(string) == "" {
-		logger.Info().Msg("API Key not provided at command line - checking for ENV VAR")
-		// API not provided at cmdline
-		val, exists := os.LookupEnv("MM_API")
-		if exists {
-			apiKey = val
-			logger.Info().Msg("Environment Variable MM_API Found")
-		} else {
-			logger.Info().Msg("Environment Variable MM_API Not Found, checking for mm_api.txt")
-			_, err := os.Stat("mm_api.txt")
-			if os.IsNotExist(err) {
-				logger.Error().Msgf("Could not find mm_api.txt - downloads not possible.")
-			}
-			logger.Info().Msgf("Found mm_api.txt")
-			apiKey = ReadFileToSlice("mm_api.txt", logger)[0]
-		}
-	} else {
-		logger.Info().Msgf("Reading API Key from provided commandline")
-		apiKey = arguments["api"].(string)
-	}
-	if apiKey == "" {
-		logger.Error().Msg("Could not find valid MaxMind API Key")
-		return errors.New("Could not find valid MaxMind API Key")
-	}
-	geoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=%v&suffix=tar.gz", apiKey)
-	geoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%v&suffix=tar.gz", apiKey)
-	geoLiteCountryDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%v&suffix=tar.gz", apiKey)
-
-	maxMindURLs["ASN"] = geoLiteASNDBURL
-	maxMindURLs["City"] = geoLiteCityDBURL
-	maxMindURLs["Country"] = geoLiteCountryDBURL
-	return nil
 }
 
 func findLogsToProcess(arguments map[string]any, logger zerolog.Logger) ([]string, error) {
@@ -378,164 +248,6 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	return sizeTracker.actualFilesProcessed
 }
 
-func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.Reader, writer *csv.Writer) (int, int, int, []string, error) {
-	// If flat CSV with no JSON, write the original headers plus new ones for the geo attributes
-	// If JSON field with flatten option, write original headers, then embedded JSON headers then geo attributes
-	// returns ints representing which column index in original data represents either the straight IP Address as well as JSON - -1 if does not exist.
-	idx := 0
-	ipAddressColumn := -1
-	jsonColumn := -1
-	headers := make([]string, 0)
-	newHeaderCount := 0
-	for {
-		record, err := parser.Read()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return ipAddressColumn, jsonColumn, newHeaderCount, headers, err
-		}
-
-		if idx == 0 {
-			// Add original fields to our headers
-			headers = append(headers, record...)
-
-			// TODO - Support multiple possible IP address fields and use the first one - let user enter slice as argument instead of only string.
-			for i, k := range record {
-				if strings.ToLower(k) == strings.ToLower(arguments["IPcolumn"].(string)) {
-					ipAddressColumn = i
-				}
-				if strings.ToLower(k) == strings.ToLower(arguments["JSONcolumn"].(string)) {
-					jsonColumn = i
-				}
-			}
-			idx += 1
-		} else {
-			// if flatten, we check now for JSON blob column, parse out fields and add to our headers
-			if jsonColumn != -1 && arguments["flatten"].(bool) {
-				var d interface{}
-				err := json.Unmarshal([]byte(record[jsonColumn]), &d)
-				if err != nil {
-					logger.Error().Msg("Failed to unmarshal JSON message")
-					jsonColumn = -1
-				} else {
-
-					keys := decodeJsonKeys(d.(map[string]interface{}))
-					headers = append(headers, keys...)
-					newHeaderCount = len(keys)
-				}
-			}
-			break
-		}
-	}
-
-	// Add Geo fields to current header setup
-	headers = append(headers, geoFields...)
-	return ipAddressColumn, jsonColumn, newHeaderCount, headers, nil
-}
-
-func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) {
-	parser, writer, inputF1, _, err := getNewPW(logger, inputFile, outputFile)
-	defer inputF1.Close()
-	if err != nil {
-		return
-	}
-	ipAddressColumn, jsonColumn, newHeaderCount, headers, err := setupHeaders(logger, arguments, parser, writer)
-	if err != nil {
-		logger.Error().Msgf("Error Processing File: %v", err.Error())
-		return
-	}
-
-	newParse, newWrite, NewInputF, NewOutputF, err := getNewPW(logger, inputFile, outputFile)
-	defer NewInputF.Close()
-	if err != nil {
-		return
-	}
-
-	dateindex := -1
-	if arguments["datecol"].(string) != "" {
-		dateindex = findDateHeaderIndex(headers, arguments["datecol"].(string))
-	}
-
-	idx := 0
-	var fileWG WaitGroupCount
-	recordChannel := make(chan []string)
-	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
-	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
-		JobCount: 0,
-		mw:       sync.RWMutex{},
-	}
-	records := make([][]string, 0)
-	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int))
-	for {
-		record, Ferr := newParse.Read()
-
-		if Ferr == io.EOF {
-			break
-		}
-		if Ferr != nil {
-			logger.Error().Msg(Ferr.Error())
-			return
-		}
-		if idx == 0 {
-			Werr := newWrite.Write(headers)
-			if Werr != nil {
-				logger.Error().Msg(Werr.Error())
-			}
-			idx += 1
-			continue
-		}
-
-		if jsonColumn != -1 && arguments["flatten"].(bool) {
-			var d interface{}
-			Jerr := json.Unmarshal([]byte(record[jsonColumn]), &d)
-			if Jerr != nil {
-				// Append empty values to match column headers from parsed JSON
-				logger.Error().Msg("Failed to Unmarshal JSON")
-				record = append(record, make([]string, newHeaderCount)...)
-			} else {
-				values := decodeJson(d.(map[string]interface{}))
-				if len(values) != newHeaderCount {
-					//logger.Error().Msg("Error - Parsed JSON Value count does not match new header count!")
-					record = append(record, make([]string, newHeaderCount)...)
-				} else {
-					record = append(record, values...)
-				}
-			}
-		}
-
-		records = append(records, record)
-		if len(records) <= lineBatchSize {
-			continue
-		} else {
-			if jobTracker.GetJobs() >= maxRoutinesPerFile {
-			waitForOthers:
-				for {
-					if jobTracker.GetJobs() >= maxRoutinesPerFile {
-						continue
-					} else {
-						fileWG.Add(1)
-						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-						break waitForOthers
-					}
-				}
-			} else {
-				fileWG.Add(1)
-				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-			}
-			records = nil
-		}
-		idx += 1
-	}
-	fileWG.Add(1)
-	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-	records = nil
-	closeChannelWhenDone(recordChannel, &fileWG)
-}
-
 func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *SizeTracker, t *runningJobs, tempArgs map[string]any) {
 	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
 	defer t.SubJob()
@@ -608,226 +320,6 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	}
 }
 
-func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
-	inputF, err := openInput(inputFile)
-	defer inputF.Close()
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return err
-	}
-	outputF, err := createOutput(outputFile)
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return err
-	}
-	writer := csv.NewWriter(outputF)
-	headers := make([]string, 0)
-	headers = append(headers, "line")
-	headers = append(headers, geoFields...)
-	err = writer.Write(headers)
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return err
-	}
-	scanner := bufio.NewScanner(inputF)
-	var fileWG WaitGroupCount
-	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
-	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
-		JobCount: 0,
-		mw:       sync.RWMutex{},
-	}
-	records := make([][]string, 0)
-	recordChannel := make(chan []string)
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
-	idx := 0
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		if len(line) == 0 {
-			continue
-		}
-		scanErr := scanner.Err()
-		if scanErr == io.EOF {
-			fileWG.Add(1)
-			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-			records = nil
-			break
-		}
-		if scanErr != nil {
-			logger.Error().Msg(scanErr.Error())
-			return scanErr
-		}
-		records = append(records, []string{line})
-		if len(records) <= lineBatchSize {
-			continue
-		} else {
-			if jobTracker.GetJobs() >= maxRoutinesPerFile {
-			waitForOthers:
-				for {
-					if jobTracker.GetJobs() >= maxRoutinesPerFile {
-						continue
-					} else {
-						fileWG.Add(1)
-						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-						break waitForOthers
-					}
-				}
-			} else {
-				fileWG.Add(1)
-				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-			}
-			records = nil
-		}
-		idx += 1
-	}
-	fileWG.Add(1)
-	// Catchall in case there are still records to process
-	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-	closeChannelWhenDone(recordChannel, &fileWG)
-	return nil
-}
-
-func removeSpace(s string) string {
-	rr := make([]rune, 0, len(s))
-	for _, r := range s {
-		if !unicode.IsSpace(r) {
-			rr = append(rr, r)
-		}
-	}
-	return string(rr)
-}
-
-func findDateHeaderIndex(headers []string, targetCol string) int {
-	// Check a slice for a target - if it exists, return the index, otherwise, -1
-	for i, v := range headers {
-		v := strings.ReplaceAll(v, "\"", "")
-		if v == targetCol || strings.Contains(v, targetCol) {
-			return i
-		}
-	}
-	return -1
-}
-
-func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, headers []string, delim string, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
-	inputF, err := openInput(inputFile)
-	defer inputF.Close()
-	if err != nil {
-		return err
-	}
-	outputF, err := createOutput(outputFile)
-	if err != nil {
-		return err
-	}
-	writer := csv.NewWriter(outputF)
-	ipAddressColumn := -1
-	for i, v := range headers {
-		// user provided var
-		if strings.ToLower(v) == strings.ToLower(arguments["IPcolumn"].(string)) {
-			ipAddressColumn = i
-			break
-			// iis default
-		} else if strings.ToLower(v) == strings.ToLower("ClientIpAddress") {
-			ipAddressColumn = i
-			break
-		} else if strings.ToLower(v) == strings.ToLower("c-ip") {
-			ipAddressColumn = i
-			break
-		}
-	}
-	dateindex := -1
-	if tempArgs["datecol"].(string) != "" {
-		dateindex = findDateHeaderIndex(headers, arguments["datecol"].(string))
-	}
-
-	headers = append(headers, geoFields...)
-	err = writer.Write(headers)
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return err
-	}
-	idx := 0
-	scanner := bufio.NewScanner(inputF)
-	// Limited to ~65k characters in a single line - won't work with crazy complex log types but should be fine for IIS/W3C
-	var fileWG WaitGroupCount
-	recordChannel := make(chan []string)
-	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
-	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
-		JobCount: 0,
-		mw:       sync.RWMutex{},
-	}
-	records := make([][]string, 0)
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
-	for scanner.Scan() {
-		if idx == 0 {
-			idx += 1
-			continue
-		}
-		line := scanner.Text()
-		if len(line) == 0 {
-			break
-		}
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		scanErr := scanner.Err()
-		if scanErr == io.EOF {
-			fileWG.Add(1)
-			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-			records = nil
-			break
-		}
-		if scanErr != nil {
-			logger.Error().Msg(scanErr.Error())
-			return scanErr
-		}
-		record := strings.Split(line, delim)
-		records = append(records, record)
-		if len(records) <= lineBatchSize {
-			continue
-		} else {
-			if jobTracker.GetJobs() >= maxRoutinesPerFile {
-			waitForOthers:
-				for {
-					if jobTracker.GetJobs() >= maxRoutinesPerFile {
-						continue
-					} else {
-						fileWG.Add(1)
-						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-						break waitForOthers
-					}
-				}
-			} else {
-				fileWG.Add(1)
-				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-			}
-			records = nil
-		}
-		idx += 1
-	}
-	fileWG.Add(1)
-	// Catchall in case there are still records to process
-	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-	closeChannelWhenDone(recordChannel, &fileWG)
-	return nil
-}
-
-func closeChannelWhenDone(c chan []string, wg *WaitGroupCount) {
-	wg.Wait()
-	close(c)
-}
-
 func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File, bufferSize int) {
 	// TODO - Consider having pool of routines appending records to slice [][]string and a single reader drawing from this to avoid any bottle-necks
 	defer outputF.Close()
@@ -857,20 +349,6 @@ func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger,
 	}
 }
 
-func getDateBounds(tempArgs map[string]any) (time.Time, time.Time) {
-	startDate, _ := time.Parse("2006-01-02", "1800-01-01")
-	endDate, _ := time.Parse("2006-01-02", "2300-01-01")
-	sd, sdexist := tempArgs["startdate"].(time.Time)
-	ed, edexist := tempArgs["enddate"].(time.Time)
-	if sdexist {
-		startDate = sd
-	}
-	if edexist {
-		endDate = ed
-	}
-	return startDate, endDate
-}
-
 func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any, dateindex int) {
 	defer waitGroup.Done()
 	defer tracker.SubJob()
@@ -893,44 +371,6 @@ func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.R
 		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS, tempArgs)
 		channel <- record
 	}
-}
-
-func checkIISorW3c(logger zerolog.Logger, inputFile string) (bool, []string, string, error) {
-	// Determines if a file appears to be an IIS/W3C format log by checking for a line starting with #fields within the first 8 lines of the file
-	// If yes, returns the headers and detected delimiter - delimiter is identified by splitting the #fields line with a " " separator - if the length of the resulting slice is 2, this means there is only one space in the line aka the delimiter is commas
-	// If the slice length is not 2, most likely we are dealing with a comma delimiter
-	f, err := os.Open(inputFile)
-	defer f.Close()
-	fields := make([]string, 0)
-	if err != nil {
-		return false, fields, "", err
-	}
-	scanner := bufio.NewScanner(f)
-	for i := 0; i < 8; i++ {
-		if scanner.Scan() {
-			if strings.HasPrefix(strings.ToLower(scanner.Text()), "#fields:") {
-				fieldSplit := strings.Split(scanner.Text(), " ")
-				iisStyle := false
-				if len(fieldSplit) == 2 {
-					// IIS style comma-separated  - #Fields field1,field2
-					iisStyle = true
-				}
-				fieldData := strings.TrimSpace(strings.Split(scanner.Text(), "#Fields:")[1])
-				// Now we have all fields - just split by either comma or space depending on iis or w3c styling
-				headers := make([]string, 0)
-				delim := ""
-				if iisStyle {
-					headers = append(headers, strings.Split(fieldData, ",")...)
-					delim = ","
-				} else {
-					headers = append(headers, strings.Split(fieldData, " ")...)
-					delim = " "
-				}
-				return true, headers, delim, nil
-			}
-		}
-	}
-	return false, fields, "", err
 }
 
 func findClientIP(logger zerolog.Logger, jsonBlob string) string {
@@ -1087,79 +527,6 @@ func getCSVHeaders(csvFile string) ([]string, error) {
 
 }
 
-func readAndSendToChannel(csvFile string, c chan []string, waiter *WaitGroupCount, logger zerolog.Logger, initialHeaders []string) {
-	defer waiter.Done()
-	inputHeaderFile, err := openInput(csvFile)
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer inputHeaderFile.Close()
-	idx := 0
-	reader := csv.NewReader(inputHeaderFile)
-	for {
-		record, Ferr := reader.Read()
-
-		if Ferr == io.EOF {
-			break
-		}
-		if Ferr != nil {
-			logger.Error().Msg(Ferr.Error())
-			continue
-		}
-		if idx == 0 {
-			if !reflect.DeepEqual(initialHeaders, record) {
-				logger.Error().Msgf("Header Mismatch - Skipping: %v", csvFile)
-				return
-			}
-			idx += 1
-			continue
-		}
-		c <- record
-	}
-}
-
-func combineWriterListen(outputF *os.File, writer *csv.Writer, c chan []string, logger zerolog.Logger, MainWaiter *sync.WaitGroup) {
-	// Will receive a handle to a pre-setup CSV writer and listen on a channel for incoming records to write, breaking when the channel is closed.
-	defer MainWaiter.Done()
-	defer outputF.Close()
-	for {
-		record, ok := <-c
-		if !ok {
-			break
-		} else {
-			err := writer.Write(record)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-			}
-		}
-	}
-
-}
-
-func makeTorList(arguments map[string]any, logger zerolog.Logger) {
-	// Deprecated now that we are pulling more holistically
-	_, err := os.Stat(torExitNodeFile)
-	if errors.Is(err, os.ErrNotExist) {
-		err2 := downloadFile(logger, torExitNodeURL, torExitNodeFile, "")
-		if err2 != nil {
-			logger.Error().Msg("Error Downloading TOR Exit Nodes")
-			logger.Error().Msg(err.Error())
-			return
-		}
-	}
-	// File exists - either it already existed or we downloaded it.
-	torNodes := ReadFileToSlice(torExitNodeFile, logger)
-	for _, v := range torNodes {
-		line := strings.TrimSpace(v)
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		torNodeMap[line] = struct{}{}
-	}
-	doTorEnrich = true
-}
-
 func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error) {
 	// Receive a target date and compare to startdate and enddate timestamp - return true if..
 	// If startdate provided with no enddate and eventTimestamp is after startdate
@@ -1183,7 +550,9 @@ func main() {
 		TIBuildErr := buildThreatDB(arguments, logger)
 		if TIBuildErr != nil {
 			logger.Error().Msg(TIBuildErr.Error())
+			return
 		}
+		updateVPNList(logger)
 		summarizeThreatDB(logger)
 		return
 	}
@@ -1207,6 +576,16 @@ func main() {
 		return
 	}
 
+	if arguments["summarizeti"].(bool) {
+		_, err := os.Stat(threatDBFile)
+		if errors.Is(err, os.ErrNotExist) {
+			logger.Error().Msg(err.Error())
+		} else {
+			summarizeThreatDB(logger)
+		}
+		return
+	}
+
 	if arguments["useti"].(bool) {
 		_, err := os.Stat(threatDBFile)
 		if errors.Is(err, os.ErrNotExist) {
@@ -1219,10 +598,10 @@ func main() {
 
 	//makeTorList(arguments, logger)
 	APIerr := setAPIUrls(arguments, logger)
-	if APIerr != nil {
+	Finderr := findOrGetDBs(arguments, logger)
+	if APIerr != nil && Finderr != nil {
 		return
 	}
-	findOrGetDBs(arguments, logger)
 	logFiles, err := findLogsToProcess(arguments, logger)
 	if err != nil {
 		return
