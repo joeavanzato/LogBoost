@@ -340,3 +340,9 @@ func updateVPNList(logger zerolog.Logger) {
 	}
 
 }
+
+// TODO - Consider crawling github repos in another config set
+// https://github.com/volexity/threat-intel/tree/main
+// https://github.com/vuldb/cyber_threat_intelligence
+// https://github.com/Cisco-Talos/IOCs
+// https://github.com/avast/ioc
