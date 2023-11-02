@@ -202,10 +202,7 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		}
 		v, e := regexFirstPublicIPFromString(lineTrimmed)
 		if e {
-			_, err = stmt.Exec(v, iptype)
-			if err != nil {
-				return err
-			}
+			ingestRecord(v, iptype, stmt, logger)
 		}
 	}
 	err = tx.Commit()
@@ -213,6 +210,13 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		return err
 	}
 	return nil
+}
+
+func ingestRecord(ip string, category string, stmt *sql.Stmt, logger zerolog.Logger) {
+	_, err := stmt.Exec(ip, category)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+	}
 }
 
 func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
@@ -275,4 +279,48 @@ func makeTorList(arguments map[string]any, logger zerolog.Logger) {
 		torNodeMap[line] = struct{}{}
 	}
 	doTorEnrich = true
+}
+
+func updateVPNList(logger zerolog.Logger) {
+	url := "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt"
+	file := "vpn_full_feed_X4BNet.txt"
+	dest := fmt.Sprintf("%v\\%v", intelDir, file)
+	dlerr := downloadFile(logger, url, dest, "")
+	if dlerr != nil {
+		logger.Error().Msgf("Error Updating VPN List: %v", dlerr.Error())
+		return
+	}
+	ipList := ReadFileToSlice(dest, logger)
+	db, dberr := openDBConnection(logger)
+	if dberr != nil {
+		logger.Error().Msg(dberr.Error())
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	stmt, err := tx.Prepare("insert or ignore into ips(ip, category) values(?, ?)")
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	defer stmt.Close()
+	logger.Info().Msgf("Ingesting %v", dest)
+	for _, v := range ipList {
+		gen, err := New(v)
+		if err != nil {
+			continue
+		}
+		for ip := gen.Next(); ip != nil; ip = gen.Next() {
+			ingestRecord(ip.String(), "vpn", stmt, logger)
+		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+
 }
