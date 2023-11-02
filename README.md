@@ -65,9 +65,9 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
 -dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains.
  
 -maxgoperfile [int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
--batchsize [int] (default=100) - Limit how many lines per-file are sent to each spawned goroutine
--writebuffer [int] (default=100) - How many lines to buffer in memory before writing to CSV
--concurrentfiles [int] (default=1000) - Limit how many files are processed concurrently.
+-batchsize [int] (default=500) - Limit how many lines per-file are sent to each spawned goroutine
+-writebuffer [int] (default=2000) - How many lines to buffer in memory before writing to CSV
+-concurrentfiles [int] (default=100) - Limit how many files are processed concurrently.
 
 -combine [bool] (default=false) - Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.
 
@@ -121,5 +121,7 @@ log2geo is capable of processing a large amount of data as all file processing i
 
 Realistically, this should not cause any issues on most modern machines - a machine with 4 GB of RAM is capable of easily handling ~1,000,000 goroutines - but now we have to take into account the files we are processing - this is where batchsize becomes important.  We must select a batchsize that is appropriate to both the data we are treating as well as the machine we are operating on - the defaults are typically good starting points to ensure work is processed efficiently but should be played with if performance is poor.
 
-Additionally, the -concurrentfiles flag can be used to limit the number of files processed concurrently - this defaults to 1,000 - together with -batchsize and -maxgoperfile the user can tweak the various concurrency settings associated with file processing to ensure performance and memory usage are suitable to the task and system at hand.
+Additionally, the -concurrentfiles flag can be used to limit the number of files processed concurrently - this defaults to 100 - together with -batchsize and -maxgoperfile the user can tweak the various concurrency settings associated with file processing to ensure performance and memory usage are suitable to the task and system at hand.
+
+On top of this - as lines are sent to the main writer for each output file, they are buffered into a slice before writing to file to help improve throughput - the amount of lines buffered at a time for each output file can be controlled via the -writebuffer parameter - defaulting to 1000.
 
