@@ -35,7 +35,6 @@ func downloadFile(logger zerolog.Logger, url string, filepath string, key string
 func lookupIPRecords(ip string) []string {
 	records, err := net.DefaultResolver.LookupAddr(context.Background(), ip)
 	if err != nil {
-		//fmt.Println(err.Error())
 		return []string{"None"}
 	}
 	return records
