@@ -99,13 +99,13 @@
 		},
 		{
 			"name": "feodotracker_abusech_botnet",
-			"url": "https://feodotracker.abuse.ch/downloads/ipblocklist.json",
+			"url": "https://feodotracker.abuse.ch/downloads/ipblocklist_aggressive.txt",
 			"type": "suspicious"
 		},
 		{
 			"name": "3coresec_bruteforce_ssh",
 			"url": "https://blacklist.3coresec.net/lists/ssh.txt",
-			"type": "suspicious"
+			"type": "bruteforce"
 		},
 		{
 			"name": "3coresec_http_attacks",
@@ -120,7 +120,7 @@
 		{
 			"name": "threatview_cobaltstrike_confident",
 			"url": "https://threatview.io/Downloads/High-Confidence-CobaltStrike-C2%20-Feeds.txt",
-			"type": "suspicious"
+			"type": "c2"
 		},
 		{
 			"name": "threatview_osint_pastebin_twitter",
@@ -140,12 +140,12 @@
 		{
 			"name": "botscout_firehol_30d",
 			"url": "https://iplists.firehol.org/files/botscout_30d.ipset",
-			"type": "suspicious"
+			"type": "bot"
 		},
 		{
 			"name": "cleantalk_firehol_30d",
 			"url": "https://iplists.firehol.org/files/cleantalk_30d.ipset",
-			"type": "suspicious"
+			"type": "spam"
 		},
 		{
 			"name": "firehol_abusers_30d",
@@ -198,9 +198,7 @@
 			"type": "proxy"
 		},
 		{
-			"id": "50",
 			"name": "greensnow_firehol",
-			"org": "GreenSnow",
 			"url": "https://iplists.firehol.org/files/greensnow.ipset",
 			"type": "suspicious"
 		},
@@ -217,32 +215,32 @@
 		{
 			"name": "bitnodes_firehol_30d",
 			"url": "https://iplists.firehol.org/files/bitcoin_nodes_30d.ipset",
-			"type": "suspicious"
+			"type": "bitcoin"
 		},
 		{
 			"name": "binarydefense_firehol_recent",
 			"url": "https://iplists.firehol.org/files/bds_atif.ipset",
-			"type": "suspicious"
+			"type": "reputation"
 		},
 		{
 			"name": "php_firehol_dictionary_30d",
 			"url": "https://iplists.firehol.org/files/php_dictionary_30d.ipset",
-			"type": "suspicious"
+			"type": "spam"
 		},
 		{
 			"name": "php_firehol_harvesters_30d",
 			"url": "https://iplists.firehol.org/files/php_harvesters_30d.ipset",
-			"type": "suspicious"
+			"type": "spam"
 		},
 		{
 			"name": "php_firehol_spammers_30d",
 			"url": "https://iplists.firehol.org/files/php_spammers_30d.ipset",
-			"type": "suspicious"
+			"type": "spam"
 		},
 		{
 			"name": "hoshsadiq_github_mining",
 			"url": "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt",
-			"type": "suspicious"
+			"type": "bitcoin"
 		},
 		{
 			"name": "kriskintel_malicious_ips",
@@ -267,17 +265,17 @@
 		{
 			"name": "secops_github_tornodes",
 			"url": "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-nodes.lst",
-			"type": "suspicious"
+			"type": "tor"
 		},
 		{
 			"name": "secops_github_torexitnodes",
 			"url": "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst",
-			"type": "suspicious"
+			"type": "tor"
 		},
 		{
 			"name": "sekuripy_ssh_bruteforce",
 			"url": "http://sekuripy.hr/blacklist.txt",
-			"type": "suspicious"
+			"type": "bruteforce"
 		},
 		{
 			"name": "turris_greylist_latest",
@@ -297,7 +295,7 @@
 		{
 			"name": "charles_thehaleys_ssh_attack",
 			"url": "https://charles.the-haleys.org/ssh_dico_attack_with_timestamps.php?days=30",
-			"type": "suspicious"
+			"type": "bruteforce"
 		},
 		{
 			"name": "alienvault_reputation",
@@ -323,6 +321,121 @@
 			"name": "firehol_tor_exits_30d",
 			"url": "https://iplists.firehol.org/files/tor_exits_30d.ipset",
 			"type": "tor"
+		},
+		{
+			"name": "firehol_stopforumspam_90d",
+			"url": "https://iplists.firehol.org/files/stopforumspam_90d.ipset",
+			"type": "spam"
+		},
+		{
+			"name": "iblocklist_onion_router",
+			"url": "https://iplists.firehol.org/files/iblocklist_onion_router.netset",
+			"type": "tor"
+		},
+		{
+			"name": "dataplane_ssh_clients",
+			"url": "https://dataplane.org/signals/sshclient.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_ssh_idpw",
+			"url": "https://dataplane.org/signals/sshidpw.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_ssh_pw",
+			"url": "https://dataplane.org/signals/sshpwauth.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_telnet_login",
+			"url": "https://dataplane.org/signals/telnetlogin.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_vnc_session",
+			"url": "https://dataplane.org/signals/vncrfb.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_ipv6_relay",
+			"url": "https://dataplane.org/signals/proto41.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_dns_recursion",
+			"url": "https://dataplane.org/signals/dnsrd.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "dataplane_dns_tcp",
+			"url": "https://dataplane.org/signals/dnstcp.txt",
+			"type": "suspicious"
+		},
+		{
+			"name": "firehol_et_compromised",
+			"url": "https://iplists.firehol.org/files/et_compromised.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "firehol_et_compromised",
+			"url": "https://iplists.firehol.org/files/et_compromised.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "dyndns_ponmocup",
+			"url": "https://iplists.firehol.org/files/dyndns_ponmocup.ipset",
+			"type": "suspicious"
+		},
+		{
+			"name": "firehol_webclient",
+			"url": "https://iplists.firehol.org/files/firehol_webclient.netset",
+			"type": "suspicious"
+		},
+		{
+			"name": "ellio_tech_feed",
+			"url": "https://cdn.ellio.tech/community-feed",
+			"type": "suspicious"
+		},
+		{
+			"name": "beesting",
+			"url": "https://beesting.tools/",
+			"type": "suspicious"
+		},
+		{
+			"name": "drb_nord_vpn",
+			"url": "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/NordVPNIPs.csv",
+			"type": "vpn"
+		},
+		{
+			"name": "drb_proton_vpn",
+			"url": "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/ProtonVPNIPs.csv",
+			"type": "vpn"
+		},
+		{
+			"name": "drb_c2_30days",
+			"url": "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/IPC2s-30day.csv",
+			"type": "c2"
+		},
+		{
+			"name": "drb_c2unverified_30days",
+			"url": "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/unverified/IPC2s-30day.csv",
+			"type": "c2"
+		},
+		{
+			"name": "monty_c2_all",
+			"url": "https://raw.githubusercontent.com/montysecurity/C2-Tracker/main/data/all.txt",
+			"type": "c2"
+		},
+		{
+			"name": "mirai_1000",
+			"url": "https://mirai.security.gives/data/ip_list.txt",
+			"type": "bot"
+		},
+		{
+			"name": "mirai_1000",
+			"url": "https://mirai.security.gives/data/ip_list.txt",
+			"type": "bot"
 		}
 	]
 }
