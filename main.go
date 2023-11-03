@@ -307,6 +307,18 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			}
 		}
 
+		// NCSA CLF Format Check
+		if !fileProcessed {
+			isCLF, _ := checkCLF(logger, inputFile)
+			if isCLF != -1 {
+				fileProcessed = true
+				parseErr := parseCLF(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isCLF)
+				if parseErr != nil {
+					logger.Error().Msg(parseErr.Error())
+				}
+			}
+		}
+
 		// Last Resort - treating as raw log, no parsing available.
 		if arguments["rawtxt"].(bool) && !fileProcessed {
 			fileProcessed = true
