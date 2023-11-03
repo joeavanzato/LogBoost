@@ -48,6 +48,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype.")
 	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.")
 	summarizeti := flag.Bool("summarizeti", false, "Summarize the contents of the ThreatDB, if it exists.")
+	fullparse := flag.Bool("fullparse", false, "If specified, will scan entire files for all possible keys to use in CSV rather than generalizing messages into an entire column - increases processing time.")
 
 	flag.Parse()
 
@@ -84,6 +85,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"intelfile":       *intelfile,
 		"inteltype":       *inteltype,
 		"summarizeti":     *summarizeti,
+		"fullparse":       *fullparse,
 	}
 
 	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {
@@ -290,7 +292,21 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			if err != nil {
 				logger.Error().Msg(err.Error())
 			}
-		} else if arguments["rawtxt"].(bool) {
+		}
+
+		if !fileProcessed {
+			headers, syslogFormat, _ := checkCEF(logger, inputFile, arguments["fullparse"].(bool))
+			if syslogFormat != -1 {
+				fileProcessed = true
+				// It is some type of valid CEF-format log file
+				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, syslogFormat, *asnDB, *cityDB, *countryDB, arguments, tempArgs)
+				if parseErr != nil {
+					logger.Error().Msg(parseErr.Error())
+				}
+			}
+		}
+
+		if arguments["rawtxt"].(bool) && !fileProcessed {
 			fileProcessed = true
 			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
@@ -322,6 +338,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 
 func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File, bufferSize int) {
 	// TODO - Consider having pool of routines appending records to slice [][]string and a single reader drawing from this to avoid any bottle-necks
+	// TODO - Consider sending writer in a goroutine with wait group, refilling buffer, etc.
 	defer outputF.Close()
 	tempRecords := make([][]string, 0)
 	for {
@@ -593,7 +610,6 @@ func main() {
 			return
 		}
 		useIntel = true
-		summarizeThreatDB(logger)
 	}
 
 	//makeTorList(arguments, logger)
