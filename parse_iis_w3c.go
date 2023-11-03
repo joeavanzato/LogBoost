@@ -118,8 +118,7 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
-		}
-		if scanErr != nil {
+		} else if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
 			return scanErr
 		}
