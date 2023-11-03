@@ -444,6 +444,13 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	if ipAddressColumn != -1 {
 		//ip = net.ParseIP(record[ipAddressColumn])
 		ipString = record[ipAddressColumn]
+		if net.ParseIP(ipString) == nil {
+			ipString, exists = regexFirstPublicIPFromString(record[ipAddressColumn])
+			if !exists {
+				record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+				return record
+			}
+		}
 	} else if jsonColumn != -1 {
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString = findClientIP(logger, record[jsonColumn])
