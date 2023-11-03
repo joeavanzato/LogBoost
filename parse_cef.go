@@ -18,8 +18,9 @@ import (
 //Log sample
 //Oct 12 04:16:11 localhost CEF:0|nxlog.org|nxlog|2.7.1243|Executable Code was Detected|Advanced exploit detected|100|src=192.168.255.110 spt=46117 dst=172.25.212.204 dpt=80
 
-var syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
-var syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_generic = regexp.MustCompile(`(?P<timestamp>[a-zA-Z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[(?P<procid>\d{1,6})\]:\s(?P<CEFALL>CEF.*)`)
 
 func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, []string, int, error) {
 	// Determines if a file is CEF - if so, returns all possible headers
@@ -47,7 +48,9 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 	// Base Headers for syslog format messages
 	syslog_headers := []string{"PRI", "VER", "TIMESTAMP", "HOST"}
 	cef_base_headers := []string{"CEF_VERSION", "CEF_VENDOR", "CEF_PRODUCT", "CEF_PRODUCT_VERSION", "CEF_EVENT_ID", "CEF_EVENT_NAME", "CEF_EVENT_SEVERITY"}
+	syslog_generic_headers := []string{"TIMESTAMP", "HOST", "PROCESS", "PROCID"}
 	syslog_headers = append(syslog_headers, cef_base_headers...)
+	syslog_generic_headers = append(syslog_generic_headers, cef_base_headers...)
 	if err != nil {
 		return make([]string, 0), make([]string, 0), -1, nil
 	}
@@ -82,6 +85,10 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 					syslog_headers = append(syslog_headers, "CEF_EXTENSIONS")
 					return syslog_headers, cefExtensionKeys, logFormat, nil
 				}
+				if logFormat == 3 {
+					syslog_generic_headers = append(syslog_generic_headers, "CEF_EXTENSIONS")
+					return syslog_generic_headers, cefExtensionKeys, logFormat, nil
+				}
 			}
 			// If we are doing a full parse, then we will scroll through entire file to find all possible CEF KV Pairs to use as headers
 			// TODO
@@ -104,10 +111,14 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 	if logFormat == 0 {
 		cef_base_headers = append(cef_base_headers, cefExtensionKeys...)
 		return cef_base_headers, cefExtensionKeys, logFormat, nil
-	} else {
+	} else if logFormat == 1 || logFormat == 2 {
 		syslog_headers = append(syslog_headers, cefExtensionKeys...)
 		return syslog_headers, cefExtensionKeys, logFormat, nil
+	} else if logFormat == 3 {
+		syslog_generic_headers = append(syslog_generic_headers, cefExtensionKeys...)
+		return syslog_generic_headers, cefExtensionKeys, logFormat, nil
 	}
+	return make([]string, 0), cefExtensionKeys, logFormat, nil
 }
 
 func getExtensionKeys(headers []string, input string) ([]string, map[string]string) {
@@ -249,7 +260,7 @@ func splitCEFLine(input string, fullParse bool, headers []string, logFormat int,
 			return cefValues
 		}
 		if logFormat == 1 {
-			match := syslog_rfc3164_rex.FindStringSubmatch(input)
+			match := cef_syslog_rfc3164_rex.FindStringSubmatch(input)
 			if len(match) == 0 {
 				return make([]string, 0)
 			}
@@ -264,12 +275,23 @@ func splitCEFLine(input string, fullParse bool, headers []string, logFormat int,
 		}
 		if logFormat == 2 {
 			// Working for normal, standardized CEF syslog
-			match := syslog_rfc5424_rex.FindStringSubmatch(input)
+			match := cef_syslog_rfc5424_rex.FindStringSubmatch(input)
 			if len(match) == 0 {
 				return make([]string, 0)
 			}
 			cefValues := strings.SplitN(match[len(match)-1], "|", 8)
 			fullValues := make([]string, 0)
+			fullValues = append(fullValues, match[1:len(match)-1]...)
+			fullValues = append(fullValues, cefValues...)
+			return fullValues
+		}
+		if logFormat == 3 {
+			match := cef_syslog_generic.FindStringSubmatch(input)
+			if len(match) == 0 {
+				return make([]string, 0)
+			}
+			fullValues := make([]string, 0)
+			cefValues := strings.SplitN(match[len(match)-1], "|", 8)
 			fullValues = append(fullValues, match[1:len(match)-1]...)
 			fullValues = append(fullValues, cefValues...)
 			return fullValues
@@ -285,7 +307,7 @@ func splitCEFLine(input string, fullParse bool, headers []string, logFormat int,
 			return record
 		}
 		if logFormat == 1 {
-			match := syslog_rfc3164_rex.FindStringSubmatch(input)
+			match := cef_syslog_rfc3164_rex.FindStringSubmatch(input)
 			if len(match) == 0 {
 				return make([]string, 0)
 			}
@@ -301,7 +323,18 @@ func splitCEFLine(input string, fullParse bool, headers []string, logFormat int,
 		}
 		if logFormat == 2 {
 			// Working for normal, standardized CEF syslog
-			match := syslog_rfc5424_rex.FindStringSubmatch(input)
+			match := cef_syslog_rfc5424_rex.FindStringSubmatch(input)
+			if len(match) == 0 {
+				return make([]string, 0)
+			}
+			cefValues := strings.SplitN(match[len(match)-1], "|", 8)
+			record = append(record, match[1:len(match)-1]...)
+			record = append(record, cefValues[:len(cefValues)-1]...)
+			record = buildRecord(cefValues[len(cefValues)-1], headers, record, cefKeys)
+			return record
+		}
+		if logFormat == 3 {
+			match := cef_syslog_generic.FindStringSubmatch(input)
 			if len(match) == 0 {
 				return make([]string, 0)
 			}
@@ -324,13 +357,17 @@ func identifySyslogHeader(input string) (int, []string) {
 	if strings.HasPrefix(input, "CEF") {
 		return 0, nil
 	}
-	match := syslog_rfc3164_rex.FindStringSubmatch(input)
+	match := cef_syslog_rfc3164_rex.FindStringSubmatch(input)
 	if len(match) != 0 {
 		return 1, match
 	}
-	match = syslog_rfc5424_rex.FindStringSubmatch(input)
+	match = cef_syslog_rfc5424_rex.FindStringSubmatch(input)
 	if len(match) != 0 {
 		return 2, match
+	}
+	match = cef_syslog_generic.FindStringSubmatch(input)
+	if len(match) != 0 {
+		return 3, match
 	}
 	return -1, nil
 }
