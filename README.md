@@ -58,6 +58,7 @@ Additionally, if databases are stored elsewhere on disk, a path to the directory
   - W3C - Looks for #Fields and space-delimited values
   - KV - [TODO] Looks for KV-style logging based on provided -delimiter and -separator values
 -rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified - should be used with -convert.
+-fullparse [bool] - Specify to perform 'deep' key detection on file formats with variable columns such as CEF, JSON, etc - will increase processing time since we have to read the whole file twice basically.
  
 -separator [string] (default="=") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
 -delimiter [string] (default=" ") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
