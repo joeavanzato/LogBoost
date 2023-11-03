@@ -285,7 +285,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if err != nil {
 			return
 		}
-		// TODO - Add more cases here for other parsing techniques like KV style
+		// IIS/W3C Format Check
 		if isIISorW3c {
 			fileProcessed = true
 			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
@@ -294,18 +294,20 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			}
 		}
 
+		// CEF Format Check
 		if !fileProcessed {
-			headers, syslogFormat, _ := checkCEF(logger, inputFile, arguments["fullparse"].(bool))
-			if syslogFormat != -1 {
+			headers, cefKeys, cefFormat, _ := checkCEF(logger, inputFile, arguments["fullparse"].(bool))
+			if cefFormat != -1 {
 				fileProcessed = true
 				// It is some type of valid CEF-format log file
-				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, syslogFormat, *asnDB, *cityDB, *countryDB, arguments, tempArgs)
+				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, cefFormat, *asnDB, *cityDB, *countryDB, arguments, tempArgs, cefKeys)
 				if parseErr != nil {
 					logger.Error().Msg(parseErr.Error())
 				}
 			}
 		}
 
+		// Last Resort - treating as raw log, no parsing available.
 		if arguments["rawtxt"].(bool) && !fileProcessed {
 			fileProcessed = true
 			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
