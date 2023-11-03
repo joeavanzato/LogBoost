@@ -13,7 +13,13 @@ On top of this, it is possible to pull down text-based threat intelligence and p
 All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
 
 ### Additional Features
-* Parsing CSV, IIS, W3C, CEF (SYSLOG 5424/3164/none - full extension parsing) into structured CSV
+* Input File Types that can be processed to structured CSV
+  * CSV
+  * Internet Information Services (IIS)
+  * W3C Extended Format
+  * Common Log Format / Combined Log Format (CLF)
+  * Common Event Format (CEF)
+  * Raw Text-Based Logs - Entire Line stored in column
 * Parsing raw text files to extract and enrich detected IP address
 * Filtering outputs on specific date ranges
 * Enriching with MaxMind Geo/ASN Information
