@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"encoding/csv"
-	"fmt"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -22,7 +21,7 @@ import (
 var syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
 var syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
 
-func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, int, error) {
+func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, []string, int, error) {
 	// Determines if a file is CEF - if so, returns all possible headers
 	// Unfortunately, CEF files can have a variable number of key-value pairs - this means that to properly parse to CSV, we have to scan the entire file first to find all possible headers then go back and re-scan for actual content ingestion.
 	// the control variable 'fullParse' determines whether we will do this full-scan or not
@@ -50,10 +49,13 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 	cef_base_headers := []string{"CEF_VERSION", "CEF_VENDOR", "CEF_PRODUCT", "CEF_PRODUCT_VERSION", "CEF_EVENT_ID", "CEF_EVENT_NAME", "CEF_EVENT_SEVERITY"}
 	syslog_headers = append(syslog_headers, cef_base_headers...)
 	if err != nil {
-		return make([]string, 0), -1, nil
+		return make([]string, 0), make([]string, 0), -1, nil
 	}
 	scanner := bufio.NewScanner(f)
+	logFormat := -1
 	idx := 0
+	match := make([]string, 0)
+	cefExtensionKeys := make([]string, 0)
 	for {
 		if scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -62,11 +64,11 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 			if scanErr == io.EOF {
 				break
 			}
-			logFormat, match := identifySyslogHeader(line)
-			if len(match) == 0 {
-			}
-			if logFormat == -1 {
-				return make([]string, 0), logFormat, nil
+			if idx == 0 {
+				logFormat, match = identifySyslogHeader(line)
+				if logFormat == -1 {
+					return make([]string, 0), cefExtensionKeys, logFormat, nil
+				}
 			}
 
 			if !fullParse && idx == 0 {
@@ -74,11 +76,11 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 				//headers = append(headers, "CEF_MESSAGE")
 				if logFormat == 0 {
 					cef_base_headers = append(cef_base_headers, "CEF_EXTENSIONS")
-					return cef_base_headers, logFormat, nil
+					return cef_base_headers, cefExtensionKeys, logFormat, nil
 				}
 				if logFormat == 1 || logFormat == 2 {
 					syslog_headers = append(syslog_headers, "CEF_EXTENSIONS")
-					return syslog_headers, logFormat, nil
+					return syslog_headers, cefExtensionKeys, logFormat, nil
 				}
 			}
 			// If we are doing a full parse, then we will scroll through entire file to find all possible CEF KV Pairs to use as headers
@@ -89,28 +91,56 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 			cefValues := make([]string, 0)
 			if logFormat == 0 {
 				cefValues = strings.SplitN(line, "|", 8)
-				cef_base_headers = getExtensionKeys(cef_base_headers, strings.TrimSpace(cefValues[len(cefValues)-1]))
+				cefExtensionKeys, _ = getExtensionKeys(cefExtensionKeys, strings.TrimSpace(cefValues[len(cefValues)-1]))
 			} else {
 				cefValues = strings.SplitN(match[len(match)-1], "|", 8)
-				cef_base_headers = getExtensionKeys(syslog_headers, strings.TrimSpace(cefValues[len(cefValues)-1]))
+				cefExtensionKeys, _ = getExtensionKeys(cefExtensionKeys, strings.TrimSpace(cefValues[len(cefValues)-1]))
 			}
-
 			idx += 1
 		} else {
 			break
 		}
 	}
-	return make([]string, 0), -1, nil
+	if logFormat == 0 {
+		cef_base_headers = append(cef_base_headers, cefExtensionKeys...)
+		return cef_base_headers, cefExtensionKeys, logFormat, nil
+	} else {
+		syslog_headers = append(syslog_headers, cefExtensionKeys...)
+		return syslog_headers, cefExtensionKeys, logFormat, nil
+	}
 }
 
-func getExtensionKeys(headers []string, input string) []string {
-	fmt.Println(input)
-
-	return headers
-
+func getExtensionKeys(headers []string, input string) ([]string, map[string]string) {
+	input = strings.ReplaceAll(input, "\\=", "EQUAL_SIGN_TEMP")
+	keymap := make(map[string]string)
+	if !strings.Contains(input, "=") {
+		return headers, keymap
+	}
+	initialSplit := strings.Split(input, "=")
+	// Now we have the first set of splits - we will make a naieve assumption that anything to the left of an '=' is a key and anything up to the next equal minus the last element is the value
+	// We know the first element is always a key
+	key := ""
+	for i := 0; i < len(initialSplit)-1; i++ {
+		keys := strings.Split(initialSplit[i], " ")
+		if len(keys) == 1 {
+			key = keys[0]
+		} else {
+			key = keys[len(keys)-1]
+		}
+		valueSplit := strings.Split(initialSplit[i+1], " ")
+		value := strings.Join(valueSplit[:len(valueSplit)-1], " ")
+		value = strings.ReplaceAll(value, "EQUAL_SIGN_TEMP", "\\=")
+		keymap[key] = value
+	}
+	for k := range keymap {
+		if findTargetIndexInSlice(headers, k) == -1 {
+			headers = append(headers, k)
+		}
+	}
+	return headers, keymap
 }
 
-func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any) error {
+func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, cefKeys []string) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
@@ -159,7 +189,7 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 			logger.Error().Msg(scanErr.Error())
 			return scanErr
 		}
-		record := splitCEFLine(line, fullParse, headers, logFormat)
+		record := splitCEFLine(line, fullParse, headers, logFormat, cefKeys)
 		if len(record) == 0 {
 			continue
 		}
@@ -195,7 +225,24 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	return nil
 }
 
-func splitCEFLine(input string, fullParse bool, headers []string, logFormat int) []string {
+func buildRecord(cefExtensions string, headers []string, record []string, cefHeaders []string) []string {
+	// Responsible for getting the parsed results of CEF extensions in map[string]string and aligning that to the existing headers by building the complete final record to be inserted
+	_, keymap := getExtensionKeys(make([]string, 0), cefExtensions)
+	tempCefRecord := make([]string, len(cefHeaders))
+
+	for k, v := range keymap {
+		headerIndex := findTargetIndexInSlice(cefHeaders, k)
+		if headerIndex == -1 {
+			// Error - could not find a key in the headers so we will skip it - should never happen since we use the same parsing logic both runs.
+			continue
+		}
+		tempCefRecord[headerIndex] = v
+	}
+	record = append(record, tempCefRecord...)
+	return record
+}
+
+func splitCEFLine(input string, fullParse bool, headers []string, logFormat int, cefKeys []string) []string {
 	if !fullParse {
 		if logFormat == 0 {
 			cefValues := strings.SplitN(input, "|", 8)
@@ -226,6 +273,43 @@ func splitCEFLine(input string, fullParse bool, headers []string, logFormat int)
 			fullValues = append(fullValues, match[1:len(match)-1]...)
 			fullValues = append(fullValues, cefValues...)
 			return fullValues
+		}
+	} else {
+		record := make([]string, 0)
+		// full parsing enabled - get the full key-map for each cef extension, compare to headers, insert where appropriate - discard if missing header for detected key.
+		if logFormat == 0 {
+			cefValues := strings.SplitN(input, "|", 8)
+			// Append everything to the base record except for the raw extensions
+			record = append(record, cefValues[:len(cefValues)-1]...)
+			record = buildRecord(cefValues[len(cefValues)-1], headers, record, cefKeys)
+			return record
+		}
+		if logFormat == 1 {
+			match := syslog_rfc3164_rex.FindStringSubmatch(input)
+			if len(match) == 0 {
+				return make([]string, 0)
+			}
+			cefValues := strings.SplitN(match[len(match)-1], "|", 8)
+			record = append(record, match[1])
+			// version 3164 does not have syslog version, so we just insert a blank as second value then resume
+			record = append(record, "")
+			record = append(record, match[2:len(match)-1]...)
+
+			record = append(record, cefValues[:len(cefValues)-1]...)
+			record = buildRecord(cefValues[len(cefValues)-1], headers, record, cefKeys)
+			return record
+		}
+		if logFormat == 2 {
+			// Working for normal, standardized CEF syslog
+			match := syslog_rfc5424_rex.FindStringSubmatch(input)
+			if len(match) == 0 {
+				return make([]string, 0)
+			}
+			cefValues := strings.SplitN(match[len(match)-1], "|", 8)
+			record = append(record, match[1:len(match)-1]...)
+			record = append(record, cefValues[:len(cefValues)-1]...)
+			record = buildRecord(cefValues[len(cefValues)-1], headers, record, cefKeys)
+			return record
 		}
 	}
 
