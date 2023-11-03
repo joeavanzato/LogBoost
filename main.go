@@ -277,7 +277,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
 		fileProcessed = true
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
-	} else if (strings.HasSuffix(strings.ToLower(inputFile), ".txt") || strings.HasSuffix(strings.ToLower(inputFile), ".log")) && arguments["convert"].(bool) {
+	} else if arguments["convert"].(bool) {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
 		// 1 - Check if file is IIS/W3C Log and Handle
 		// 2 - If not (missing Fields# line - then assume it is some type of kv logging and use known separator/delimiter to parse out records
@@ -313,6 +313,18 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			if isCLF != -1 {
 				fileProcessed = true
 				parseErr := parseCLF(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isCLF)
+				if parseErr != nil {
+					logger.Error().Msg(parseErr.Error())
+				}
+			}
+		}
+
+		// Generic SYSLOG Checks
+		if !fileProcessed {
+			isSyslog, _ := checkSyslog(logger, inputFile)
+			if isSyslog != -1 {
+				fileProcessed = true
+				parseErr := parseSyslog(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isSyslog)
 				if parseErr != nil {
 					logger.Error().Msg(parseErr.Error())
 				}
