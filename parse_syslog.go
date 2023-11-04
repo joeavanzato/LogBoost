@@ -16,9 +16,6 @@ var syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1}
 var syslog_generic = regexp.MustCompile(`(?P<timestamp>[a-zA-Z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<message>.*)`)
 
 func checkSyslog(logger zerolog.Logger, file string) (int, error) {
-	// We will check for both Common Log Format and Combined Log Format style logs here - both are similar but Combined has two extra fields - referer and user agent
-	// Common Log Format: host ident authuser date "request" status bytes
-	// Combined Log Format: host ident authuser date "request" status bytes "referer" "useragent"
 	f, err := os.Open(file)
 	defer f.Close()
 	if err != nil {
@@ -61,10 +58,13 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 	}
 	headers := make([]string, 0)
 	if syslogFormat == 0 {
+		// RFC 3164
 		headers = append(headers, "PRI", "TIMESTAMP", "HOST", "MESSAGE")
 	} else if syslogFormat == 1 {
+		// RFC 5424
 		headers = append(headers, "PRI", "VERSION", "TIMESTAMP", "HOST", "MESSAGE")
 	} else if syslogFormat == 2 {
+		// Generic Syslog
 		headers = append(headers, "TIMESTAMP", "HOST", "PROCESS", "PROCID", "MESSAGE")
 	}
 
@@ -159,7 +159,6 @@ func buildSyslogRecord(line string, format int) []string {
 		match = syslog_rfc5424_rex.FindStringSubmatch(line)
 	} else if format == 2 {
 		match = syslog_generic.FindStringSubmatch(line)
-
 	}
 	if len(match) == 0 {
 		return match

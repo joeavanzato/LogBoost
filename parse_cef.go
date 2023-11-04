@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"fmt"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -156,6 +157,7 @@ func getExtensionKeys(headers []string, input string) ([]string, map[string]stri
 func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, cefKeys []string) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
+	fmt.Println(logFormat)
 	if err != nil {
 		return err
 	}
