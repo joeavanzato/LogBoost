@@ -20,7 +20,7 @@ import (
 
 func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
-	logDir := flag.String("logdir", "input", "Directory containing 1 or more Azure AD CSV Exports to enrich")
+	logDir := flag.String("logdir", "input", "Directory containing 1 or files to process")
 	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD\\output'")
 	column := flag.String("ipcol", "IP address", "Will check for a column with this name to find IP addresses for enrichment. (Defaults to 'IP Address' per Azure defaults)")
 	jsoncolumn := flag.String("jsoncol", "AuditData", "Will check for a column with this name to find the JSON Audit blob for enrichment. (Defaults to 'AuditData' per Azure defaults)")
@@ -43,7 +43,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	enddate := flag.String("enddate", "", "Parse and use provided value as an end date for log outputs.  If no start date is provided, will find all events from this point prior.")
 	datecol := flag.String("datecol", "", "The column containing a datetime to use - if no date can be parsed from the column, an error will be thrown and all events will be processed.")
 	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
-	getall := flag.Bool("getall", false, "Try to process all files in target path as raw text (unless identified with known parser) regardless of extension - use when processing standard linux files such as 'syslog'")
+	getall := flag.Bool("getall", false, "Get all files in target path, regardless of extension - use with -convert to try and find a parser or alone to process everything as raw text.")
 	writebuffer := flag.Int("writebuffer", 2000, "How many lines to queue at a time for writing to output CSV")
 	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype.")
 	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.")
@@ -278,7 +278,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		logger.Info().Msgf("Processing CSV: %v --> %v", inputFile, outputFile)
 		fileProcessed = true
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
-	} else if arguments["convert"].(bool) {
+	} else if arguments["convert"].(bool) || getAllFiles {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
 		// 1 - Check if file is IIS/W3C Log and Handle
 		// 2 - If not (missing Fields# line - then assume it is some type of kv logging and use known separator/delimiter to parse out records
@@ -337,7 +337,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		}
 
 		// Last Resort - treating as raw log, no parsing available.
-		if arguments["rawtxt"].(bool) && !fileProcessed {
+		if (getAllFiles || arguments["rawtxt"].(bool)) && !fileProcessed {
 			logger.Info().Msgf("Processing TXT: %v --> %v", inputFile, outputFile)
 			fileProcessed = true
 			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
@@ -346,15 +346,6 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			}
 		}
 		// Add KV style parsing logic here or whatever other methods.
-	} else if getAllFiles {
-		// If we specify getall flag and do not detect a previous parser match, try to parse the file as raw text
-		logger.Info().Msgf("Processing TXT: %v --> %v", inputFile, outputFile)
-		fileProcessed = true
-		err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
-		if err != nil {
-			logger.Error().Msg(err.Error())
-		}
-
 	}
 	if fileProcessed {
 		OfileStat, ferr := os.Stat(outputFile)
