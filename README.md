@@ -21,6 +21,7 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
   * Common Log Format / Combined Log Format (CLF)
   * Common Event Format (CEF)
   * Generic Syslog
+* Read files from plain-text version or GZ archive (linux logs, etc)
 * Parsing raw text files to extract and enrich detected IP address
 * Filtering outputs on specific date ranges
 * Enriching with MaxMind Geo/ASN Information
@@ -95,8 +96,10 @@ The tool will automatically download and extract the latest version of each data
 ### Example Usage
 ```
 log2geo.exe -logdir logs -api XXX
-log2geo.exe -buildti -useti -logdir C:\logs -dns -ipcol ipaddress : Downloaded the threat feeds listed in feed_config.json, parse into a SQLite DB and use when enriching the target CSV column 'ipaddress' along with live-querying domain names associated with the IP address.
-log2geo.exe -logdir logs -dns -maxgoperfile 20 -batchsize 100 : Process each file with up to 20 goroutines handling 100 lines per routine (20,000 concurrently) and also enrich detected IP addresses with DNS lookups
+log2geo.exe -buildti : Initialize/build the indicator database - should only be required once to build threats.db
+log2geo.exe -updateti : Use to download and ingest indicator feed updates
+log2geo.exe -logdir C:\logs -dns -useti -ipcol ipaddress : Parse the logs present in C:\logs and, use DNS to lookup domains on detected IPs and also use the indicator database - look for IPs in column named 'ipaddress'
+log2geo.exe -logdir logs -dns -maxgoperfile 40 -batchsize 100 -writebuffer 2000 : Process each file with up to 40 goroutines handling 100 lines per routine and buffering 2000 records before writing to disk - also enrich detected IP addresses with DNS lookups
 log2geo.exe -logdir C:\azureadlogs -outputdir enriched_logs : Look for all CSVs in directory 'C:\azureadlogs', output logs to 'enriched_logs' and use defaults for IP/JSON columns that may contain IP addresses (Azure Log Exports)
 log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory 'somelogs' and subsequently enrich based on column-named 'IPADDRESS'
 log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
@@ -106,14 +109,13 @@ log2geo.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -datef
 ```
 
 ### Threat Intelligence Notes
-log2geo is capable of downloading and normalizing configurable text-based threat intelligence feeds to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
+log2geo is capable of downloading and normalizing configurable text-based threat indicator feeds to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
 
-Over 40 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to download fresh copies of intelligence and ingest it into the existing databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
+Over 90 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to download fresh copies of intelligence and ingest it into the existing databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
 
-Include the 'useti' flag to actually use the database during enrichment processes - there is a minor efficiency hit but it is typically negligble.
+Include the 'useti' flag to actually use the database during enrichment processes - there is a minor efficiency hit but it is typically negligble - if only geolocation is required, then there is no need to use this feature.
 
-Adding custom files to the underlying database can be achieved using the -intelfile and -inteltype flags together.
-
+Adding custom text-based files to the underlying database can be achieved using the -intelfile and -inteltype flags together.
 
 ### TODOs
 * Add capability to 'flatten' JSON columns embedded within a CSV
@@ -189,3 +191,111 @@ While log2geo may not have parsers for every type of log or file-type - it can s
 log2geo.exe -logdir C:\somelogs -convert -rawtxt
 ```
 Each line of the input file will be included in it's entirety in the first column of the resulting CSV with additional columns added for the log2geo enrichments.
+
+#### References
+This section lists any pages, articles or other content used during the building or execution of this tool.
+* https://www.maxmind.com/en/home
+* https://github.com/korylprince/ipnetgen
+* https://github.com/rs/zerolog
+* https://github.com/mattn/go-sqlite3
+* https://stackoverflow.com/questions/28309988/how-to-read-from-either-gzip-or-plain-text-reader-in-golang/28332019#28332019
+
+#### Included Indicator Feeds
+* https://www.binarydefense.com/banlist.txt
+* https://blacklist.3coresec.net/lists/http.txt
+* https://lists.blocklist.de/lists/bruteforcelogin.txt
+* https://feodotracker.abuse.ch/downloads/ipblocklist_aggressive.txt
+* https://rules.emergingthreats.net/blockrules/compromised-ips.txt
+* https://threatview.io/Downloads/IP-High-Confidence-Feed.txt
+* https://blacklist.3coresec.net/lists/ssh.txt
+* https://dataplane.org/signals/sshidpw.txt
+* https://threatview.io/Downloads/Experimental-IOC-Tweets.txt
+* https://iplists.firehol.org/files/xroxy_30d.ipset
+* https://blacklist.3coresec.net/lists/misc.txt
+* https://threatview.io/Downloads/High-Confidence-CobaltStrike-C2%20-Feeds.txt
+* https://iplists.firehol.org/files/cleantalk_30d.ipset
+* https://iplists.firehol.org/files/stopforumspam_90d.ipset
+* https://view.sentinel.turris.cz/greylist-data/greylist-latest.csv
+* https://iplists.firehol.org/files/php_spammers_30d.ipset
+* https://iplists.firehol.org/files/cybercrime.ipset
+* https://dataplane.org/signals/sshclient.txt
+* https://dataplane.org/signals/vncrfb.txt
+* https://iplists.firehol.org/files/tor_exits_30d.ipset
+* https://iplists.firehol.org/files/dm_tor.ipset
+* https://iplists.firehol.org/files/php_harvesters_30d.ipset
+* https://iplists.firehol.org/files/bds_atif.ipset
+* https://iplists.firehol.org/files/vxvault.ipset
+* https://iplists.firehol.org/files/botscout_30d.ipset
+* https://lists.blocklist.de/lists/21.txt
+* https://iplists.firehol.org/files/iblocklist_onion_router.netset
+* https://iplists.firehol.org/files/proxylists_30d.ipset
+* https://iplists.firehol.org/files/firehol_abusers_30d.netset
+* https://iplists.firehol.org/files/greensnow.ipset
+* https://iplists.firehol.org/files/ipblacklistcloud_recent_30d.ipset
+* https://dataplane.org/signals/telnetlogin.txt
+* https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst
+* https://iplists.firehol.org/files/bitcoin_nodes_30d.ipset
+* https://iplists.firehol.org/files/php_dictionary_30d.ipset
+* https://kriskintel.com/feeds/ktip_malicious_Ips.txt
+* https://lists.blocklist.de/lists/80.txt
+* https://dataplane.org/signals/dnsrd.txt
+* https://myip.ms/files/blacklist/htaccess/latest_blacklist.txt
+* https://lists.blocklist.de/lists/22.txt
+* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/NordVPNIPs.csv
+* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/ProtonVPNIPs.csv
+* https://www.talosintelligence.com/documents/ip-blacklist
+* https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv
+* https://reputation.alienvault.com/reputation.generic
+* http://cinsscore.com/list/ci-badguys.txt
+* https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt
+* https://lists.blocklist.de/lists/25.txt
+* https://iplists.firehol.org/files/et_compromised.ipset
+* https://iplists.firehol.org/files/sslproxies_30d.ipset
+* https://www.botvrij.eu/data/ioclist.ip-src
+* https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-nodes.lst
+* https://raw.githubusercontent.com/scriptzteam/badIPS/main/ips.txt
+* https://reputation.alienvault.com/reputation.data
+* https://iplists.firehol.org/files/blocklist_net_ua.ipset
+* https://raw.githubusercontent.com/rodanmaharjan/ThreatIntelligence/main/Mirai.txt
+* https://raw.githubusercontent.com/Neo23x0/signature-base/master/iocs/c2-iocs.txt
+* https://osint.digitalside.it/Threat-Intel/lists/latestips.txt
+* https://www.dan.me.uk/torlist/
+* https://threatfox.abuse.ch/export/csv/ip-port/recent/
+* https://charles.the-haleys.org/ssh_dico_attack_with_timestamps.php?days=30
+* http://sekuripy.hr/blacklist.txt
+* https://lists.blocklist.de/lists/993.txt
+* https://cdn.ellio.tech/community-feed
+* https://iplists.firehol.org/files/tor_exits_30d.ipset
+* https://sslbl.abuse.ch/blacklist/sslipblacklist_aggressive.txt
+* https://www.botvrij.eu/data/ioclist.ip-dst
+* https://iplists.firehol.org/files/et_compromised.ipset
+* https://check.torproject.org/torbulkexitlist
+* https://lists.blocklist.de/lists/110.txt
+* https://iplists.firehol.org/files/firehol_webclient.netset
+* https://iplists.firehol.org/files/proxz_30d.ipset
+* https://danger.rulez.sk/projects/bruteforceblocker/blist.php
+* https://iplists.firehol.org/files/socks_proxy_30d.ipset
+* https://dataplane.org/signals/sshpwauth.txt
+* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/unverified/IPC2s-30day.csv
+* https://lists.blocklist.de/lists/443.txt
+* https://lists.blocklist.de/lists/143.txt
+* https://dataplane.org/signals/dnstcp.txt
+* https://iplists.firehol.org/files/dyndns_ponmocup.ipset
+* https://raw.githubusercontent.com/montysecurity/C2-Tracker/main/data/all.txt
+* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/blackcat%20ransomware.txt
+* https://beesting.tools/
+* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/CobaltStrike.txt
+* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/IPC2s-30day.csv
+* https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/compromised-ips.txt
+* https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/illuminate.txt
+* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/Malicious%20IP.txt
+* https://lists.blocklist.de/lists/bots.txt
+* https://mirai.security.gives/data/ip_list.txt
+* https://www.darklist.de/raw.php
+* https://report.rutgers.edu/DROP/attackers
+* https://iplists.firehol.org/files/et_tor.ipset
+* https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/sans.txt
+* https://iplists.firehol.org/files/firehol_proxies.netset
+* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/C2%20IOC.txt
+* https://dataplane.org/signals/proto41.txt
+* https://raw.githubusercontent.com/elliotwutingfeng/rstthreatsall/main/ioc_ip_short_all.txt
