@@ -50,6 +50,7 @@ The tool will automatically download and extract the latest version of each data
 ### Commandline Arguments
 ```
 -dbdir [string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
+-updategeo [bool] (default=false) - Update local MaxMind DBs (if they already exist)
 
 -api [string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
 
