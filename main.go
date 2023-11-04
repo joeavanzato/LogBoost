@@ -295,6 +295,18 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				logger.Error().Msg(err.Error())
 			}
 		}
+		// JSON-based per-line logging Check
+		if !fileProcessed && arguments["fullparse"].(bool) {
+			isJSON, headers, _ := checkJSON(logger, inputFile)
+			if isJSON {
+				logger.Info().Msgf("Processing JSON: %v --> %v", inputFile, outputFile)
+				fileProcessed = true
+				parseErr := parseJSON(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs, headers)
+				if parseErr != nil {
+					logger.Error().Msg(parseErr.Error())
+				}
+			}
+		}
 
 		// CEF Format Check
 		if !fileProcessed {
