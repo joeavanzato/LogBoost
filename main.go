@@ -48,6 +48,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.")
 	summarizeti := flag.Bool("summarizeti", false, "Summarize the contents of the ThreatDB, if it exists.")
 	fullparse := flag.Bool("fullparse", false, "If specified, will scan entire files for all possible keys to use in CSV rather than generalizing messages into an entire column - increases processing time.  Use to expand JSON blobs inside columnar data with -jsoncol to provide the name of the column.")
+	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
 
 	flag.Parse()
 
@@ -84,6 +85,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"inteltype":       *inteltype,
 		"summarizeti":     *summarizeti,
 		"fullparse":       *fullparse,
+		"updategeo":       *updategeo,
 	}
 
 	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {

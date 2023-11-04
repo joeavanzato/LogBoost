@@ -43,37 +43,51 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 	for k, v := range maxMindStatus {
 		if v == true {
 			logger.Info().Msgf("Found %v DB file at: %v", k, maxMindFileLocations[k])
+			if arguments["updategeo"].(bool) {
+				err = updateMaxMind(logger, dir, k)
+				if err != nil {
+					return err
+				}
+			}
 		} else {
 			logger.Info().Msgf("Could not find %v DB at %v\\%v, downloading!", k, dir, maxMindFiles[k])
-			gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
-			// Download It First
-			err := downloadFile(logger, maxMindURLs[k], gzFile, k)
+			err = updateMaxMind(logger, dir, k)
 			if err != nil {
-				logger.Error().Msg("Problem Downloading File!")
-				logger.Error().Msg(err.Error())
 				return err
 			}
-			// If successful, extract
-			r, err := os.Open(gzFile)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				return err
-			}
-			err = ExtractTarGz(r, logger, dir)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				return err
-			}
-			// Once we extract, we need to find the actual mmdb file which will be located within a newly created directory of the naming format GeoLite2-KEY_*
-			globPattern := fmt.Sprintf("%v\\GeoLite2-%v_*\\GeoLite2-%v.mmdb", dir, k, k)
-			file, err := filepath.Glob(globPattern)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				return err
-			}
-			maxMindFileLocations[k] = file[0]
 		}
 	}
+	return nil
+}
+
+func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
+	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
+	// Download It First
+	err := downloadFile(logger, maxMindURLs[k], gzFile, k)
+	if err != nil {
+		logger.Error().Msg("Problem Downloading File!")
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	// If successful, extract
+	r, err := os.Open(gzFile)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	err = ExtractTarGz(r, logger, dir)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	// Once we extract, we need to find the actual mmdb file which will be located within a newly created directory of the naming format GeoLite2-KEY_*
+	globPattern := fmt.Sprintf("%v\\GeoLite2-%v_*\\GeoLite2-%v.mmdb", dir, k, k)
+	file, err := filepath.Glob(globPattern)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	maxMindFileLocations[k] = file[0]
 	return nil
 }
 
