@@ -42,7 +42,6 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 			}
 			idx += 1
 		} else {
-			// if flatten, we check now for JSON blob column, parse out fields and add to our headers
 			if jsonColumn != -1 && arguments["flatten"].(bool) {
 				var d interface{}
 				err := json.Unmarshal([]byte(record[jsonColumn]), &d)
@@ -98,14 +97,18 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
-	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int))
+	var writeWG WaitGroupCount
+	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int), &writeWG)
 	for {
 		record, Ferr := newParse.Read()
 
 		if Ferr == io.EOF {
+			fileWG.Add(1)
+			jobTracker.AddJob()
+			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			records = nil
 			break
-		}
-		if Ferr != nil {
+		} else if Ferr != nil {
 			logger.Error().Msg(Ferr.Error())
 			return
 		}
@@ -135,7 +138,6 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 				}
 			}
 		}
-
 		records = append(records, record)
 		if len(records) <= lineBatchSize {
 			continue
@@ -166,4 +168,5 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	records = nil
 	closeChannelWhenDone(recordChannel, &fileWG)
+	writeWG.Wait()
 }

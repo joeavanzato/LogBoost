@@ -103,7 +103,8 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
+	var writeWG WaitGroupCount
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	for scanner.Scan() {
 		if idx == 0 {
 			idx += 1
@@ -158,5 +159,6 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 	jobTracker.AddJob()
 	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
+	writeWG.Wait()
 	return nil
 }

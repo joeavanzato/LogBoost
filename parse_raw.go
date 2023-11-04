@@ -43,7 +43,8 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	}
 	records := make([][]string, 0)
 	recordChannel := make(chan []string)
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
+	var writeWG WaitGroupCount
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	idx := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -95,5 +96,6 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	jobTracker.AddJob()
 	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 	closeChannelWhenDone(recordChannel, &fileWG)
+	writeWG.Wait()
 	return nil
 }

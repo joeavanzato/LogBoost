@@ -187,7 +187,8 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	}
 	ipAddressColumn := findTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
 
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
+	var writeWG WaitGroupCount
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	scanner, err := scannerFromFile(inputF)
 	if err != nil {
 		return err
@@ -242,6 +243,7 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	jobTracker.AddJob()
 	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
+	writeWG.Wait()
 	return nil
 }
 

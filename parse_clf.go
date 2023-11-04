@@ -89,7 +89,8 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		// Should just set this to fixed '3' since it always is
 		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
 	}
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
+	var writeWG WaitGroupCount
+	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	scanner, err := scannerFromFile(inputF)
 	if err != nil {
 		return err
@@ -144,6 +145,7 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 	jobTracker.AddJob()
 	go processRecords(logger, records, asnDB, cityDB, countryDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
+	writeWG.Wait()
 	return nil
 }
 
