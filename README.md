@@ -20,6 +20,7 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
   * Extended Log Format (ELF)
   * Common Log Format / Combined Log Format (CLF)
   * Common Event Format (CEF)
+  * JSON per-line logging
   * Generic Syslog
 * Read files from plain-text version or GZ archive (linux logs, etc)
 * Parsing raw text files to extract and enrich detected IP address
@@ -32,6 +33,7 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
 * Customizing concurrency settings to fine-tune efficiency/throughput
 * Capable of handling thousands of files concurrently by default
 * Auto-download / update of MaxMind and configured Threat Intelligence
+
 
 ### Requirements
 
@@ -50,7 +52,7 @@ The tool will automatically download and extract the latest version of each data
 
 -api [string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
 
--logdir [string] (default="input") - specify the directory containing one or more CSV files to process
+-logdir [string] (default="input") - specify the directory containing one or more files to process
 -outputdir [string] (default="output") - specify the directory to store enriched logs - defaults to $CWD\output
 
 -ipcol [string] (default="IP address") - specify the name of a column in the CSV files that stores IP addresses - defaults to 'IP address' to find Azure Signin Data column
