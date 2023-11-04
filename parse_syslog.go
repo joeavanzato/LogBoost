@@ -14,7 +14,7 @@ import (
 
 var syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<syshost>.*?)\s(?P<msg>.*)`)
 var syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?P<syshost>.*?)\s(?P<msg>.*)`)
-var syslog_generic = regexp.MustCompile(`(?P<timestamp>[a-zA-Z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[(?P<procid>\d{1,6})\]:\s(?P<message>.*)`)
+var syslog_generic = regexp.MustCompile(`(?P<timestamp>[a-zA-Z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<message>.*)`)
 
 func checkSyslog(logger zerolog.Logger, file string) (int, error) {
 	// We will check for both Common Log Format and Combined Log Format style logs here - both are similar but Combined has two extra fields - referer and user agent
@@ -89,7 +89,7 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 	if tempArgs["datecol"].(string) != "" {
 		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
 	}
-	ipAddressColumn := findTargetIndexInSlice(headers, arguments["ipcol"].(string))
+	ipAddressColumn := findTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
 	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
 	scanner := bufio.NewScanner(inputF)
 	idx := 0
@@ -153,6 +153,7 @@ func buildSyslogRecord(line string, format int) []string {
 		match = syslog_rfc5424_rex.FindStringSubmatch(line)
 	} else if format == 2 {
 		match = syslog_generic.FindStringSubmatch(line)
+
 	}
 	if len(match) == 0 {
 		return match

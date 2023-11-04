@@ -20,7 +20,7 @@ import (
 
 var cef_syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
 var cef_syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
-var cef_syslog_generic = regexp.MustCompile(`(?P<timestamp>[a-zA-Z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[(?P<procid>\d{1,6})\]:\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_generic = regexp.MustCompile(`(?P<timestamp>[a-zA-Z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<CEFALL>CEF.*)`)
 
 func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, []string, int, error) {
 	// Determines if a file is CEF - if so, returns all possible headers
@@ -181,7 +181,7 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	if tempArgs["datecol"].(string) != "" {
 		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
 	}
-	ipAddressColumn := findTargetIndexInSlice(headers, arguments["ipcol"].(string))
+	ipAddressColumn := findTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
 
 	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
 	scanner := bufio.NewScanner(inputF)
