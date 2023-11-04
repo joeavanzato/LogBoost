@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -10,7 +9,7 @@ import (
 	"sync"
 )
 
-func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.Reader, writer *csv.Writer) (int, int, int, []string, error) {
+func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.Reader, writer *csv.Writer) (int, int, []string, []string, error) {
 	// If flat CSV with no JSON, write the original headers plus new ones for the geo attributes
 	// If JSON field with flatten option, write original headers, then embedded JSON headers then geo attributes
 	// returns ints representing which column index in original data represents either the straight IP Address as well as JSON - -1 if does not exist.
@@ -18,13 +17,13 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 	ipAddressColumn := -1
 	jsonColumn := -1
 	headers := make([]string, 0)
-	newHeaderCount := 0
+	jsonKeys := make([]string, 0)
 	for {
 		record, err := parser.Read()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return ipAddressColumn, jsonColumn, newHeaderCount, headers, err
+			return ipAddressColumn, jsonColumn, headers, nil, err
 		}
 
 		if idx == 0 {
@@ -41,27 +40,29 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 				}
 			}
 			idx += 1
-		} else {
-			if jsonColumn != -1 && arguments["flatten"].(bool) {
-				var d interface{}
-				err := json.Unmarshal([]byte(record[jsonColumn]), &d)
-				if err != nil {
-					logger.Error().Msg("Failed to unmarshal JSON message")
-					jsonColumn = -1
-				} else {
+		}
 
-					keys := decodeJsonKeys(d.(map[string]interface{}))
-					headers = append(headers, keys...)
-					newHeaderCount = len(keys)
+		if jsonColumn != -1 && arguments["fullparse"].(bool) {
+			keymap, err := parseJSONtoMap(record[jsonColumn])
+			if err != nil {
+				continue
+			}
+			for k, _ := range keymap {
+				if findTargetIndexInSlice(jsonKeys, k) == -1 {
+					jsonKeys = append(jsonKeys, k)
 				}
 			}
+		} else {
 			break
 		}
 	}
 
 	// Add Geo fields to current header setup
+	if jsonColumn != -1 {
+		headers = append(headers, jsonKeys...)
+	}
 	headers = append(headers, geoFields...)
-	return ipAddressColumn, jsonColumn, newHeaderCount, headers, nil
+	return ipAddressColumn, jsonColumn, headers, jsonKeys, nil
 }
 
 func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) {
@@ -70,7 +71,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	if err != nil {
 		return
 	}
-	ipAddressColumn, jsonColumn, newHeaderCount, headers, err := setupHeaders(logger, arguments, parser, writer)
+	ipAddressColumn, jsonColumn, headers, jsonKeys, err := setupHeaders(logger, arguments, parser, writer)
 	if err != nil {
 		logger.Error().Msgf("Error Processing File: %v", err.Error())
 		return
@@ -121,22 +122,9 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			continue
 		}
 
-		if jsonColumn != -1 && arguments["flatten"].(bool) {
-			var d interface{}
-			Jerr := json.Unmarshal([]byte(record[jsonColumn]), &d)
-			if Jerr != nil {
-				// Append empty values to match column headers from parsed JSON
-				logger.Error().Msg("Failed to Unmarshal JSON")
-				record = append(record, make([]string, newHeaderCount)...)
-			} else {
-				values := decodeJson(d.(map[string]interface{}))
-				if len(values) != newHeaderCount {
-					//logger.Error().Msg("Error - Parsed JSON Value count does not match new header count!")
-					record = append(record, make([]string, newHeaderCount)...)
-				} else {
-					record = append(record, values...)
-				}
-			}
+		if jsonColumn != -1 && arguments["fullparse"].(bool) {
+			jsonData := buildRecordJSON(record[jsonColumn], jsonKeys)
+			record = append(record, jsonData...)
 		}
 		records = append(records, record)
 		if len(records) <= lineBatchSize {
