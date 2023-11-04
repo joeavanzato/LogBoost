@@ -372,10 +372,12 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	}
 }
 
-func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File, bufferSize int) {
+func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File, bufferSize int, wait *WaitGroupCount) {
 	// TODO - Consider having pool of routines appending records to slice [][]string and a single reader drawing from this to avoid any bottle-necks
 	// TODO - Consider sending writer in a goroutine with wait group, refilling buffer, etc.
 	defer outputF.Close()
+	defer wait.Done()
+	wait.Add(1)
 	tempRecords := make([][]string, 0)
 	for {
 		record, ok := <-c
