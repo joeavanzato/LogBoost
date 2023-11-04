@@ -251,7 +251,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 }
 
 func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *SizeTracker, t *runningJobs, tempArgs map[string]any) {
-	logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
+	//logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
 	defer t.SubJob()
 	defer waitGroup.Done()
 
@@ -275,6 +275,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	defer countryDB.Close()
 	fileProcessed := false
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
+		logger.Info().Msgf("Processing CSV: %v --> %v", inputFile, outputFile)
 		fileProcessed = true
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 	} else if arguments["convert"].(bool) {
@@ -287,6 +288,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		}
 		// IIS/W3C Format Check
 		if isIISorW3c {
+			logger.Info().Msgf("Processing IIS/W3C: %v --> %v", inputFile, outputFile)
 			fileProcessed = true
 			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
@@ -298,6 +300,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if !fileProcessed {
 			headers, cefKeys, cefFormat, _ := checkCEF(logger, inputFile, arguments["fullparse"].(bool))
 			if cefFormat != -1 {
+				logger.Info().Msgf("Processing CEF: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
 				// It is some type of valid CEF-format log file
 				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, cefFormat, *asnDB, *cityDB, *countryDB, arguments, tempArgs, cefKeys)
@@ -311,6 +314,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if !fileProcessed {
 			isCLF, _ := checkCLF(logger, inputFile)
 			if isCLF != -1 {
+				logger.Info().Msgf("Processing CLF: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
 				parseErr := parseCLF(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isCLF)
 				if parseErr != nil {
@@ -323,6 +327,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if !fileProcessed {
 			isSyslog, _ := checkSyslog(logger, inputFile)
 			if isSyslog != -1 {
+				logger.Info().Msgf("Processing SYSLOG: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
 				parseErr := parseSyslog(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isSyslog)
 				if parseErr != nil {
@@ -333,6 +338,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 
 		// Last Resort - treating as raw log, no parsing available.
 		if arguments["rawtxt"].(bool) && !fileProcessed {
+			logger.Info().Msgf("Processing TXT: %v --> %v", inputFile, outputFile)
 			fileProcessed = true
 			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
@@ -342,6 +348,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		// Add KV style parsing logic here or whatever other methods.
 	} else if getAllFiles {
 		// If we specify getall flag and do not detect a previous parser match, try to parse the file as raw text
+		logger.Info().Msgf("Processing TXT: %v --> %v", inputFile, outputFile)
 		fileProcessed = true
 		err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 		if err != nil {
