@@ -12,8 +12,8 @@ On top of this, it is possible to pull down text-based threat intelligence and p
 
 All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
 
-### Additional Features
-* Input File Types that can be processed to a structured CSV
+### Primary Features
+* Process Structured/Semi-Structured/Unstructured data to enriched CSV
   * CSV
   * Internet Information Services (IIS)
   * W3C Extended Format (W3C)
@@ -22,17 +22,18 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
   * Common Event Format (CEF)
   * JSON per-line logging
   * Generic Syslog
-* Read files from plain-text version or GZ archive (linux logs, etc)
-* Parsing raw text files to extract and enrich detected IP address
-* Filtering outputs on specific date ranges
-* Enriching with MaxMind Geo/ASN Information
-* Enriching with DNS lookups
-* Enriching with configurable threat intelligence feeds
-* Ingesting custom intelligence files for downstream use
+  * Raw Text Files
+* Read plain-text files or GZ archive transparently
+* Expand JSON blobs contained within a CSV to individual columns
+* Filtering outputs on specific datetime ranges
+* Enriching detected IP with MaxMind Geo/ASN Information
+* Enriching detected IP with DNS lookups
+* Enriching detected IP with configurable threat indicator feeds
+* Ingesting custom indicator files
 * Combining outputs on per-directory basis
 * Customizing concurrency settings to fine-tune efficiency/throughput
 * Capable of handling thousands of files concurrently by default
-* Auto-download / update of MaxMind and configured Threat Intelligence
+* Auto-download / update of MaxMind and configured Threat Feeds
 
 
 ### Requirements
@@ -97,6 +98,8 @@ The tool will automatically download and extract the latest version of each data
 ### Example Usage
 ```
 log2geo.exe -logdir logs -api XXX
+log2geo.exe -logdir input -jsoncol data -ipcol client -fullparse : Parse CSVs located in 'input' and look for JSON data within a column named data to expand - also look for a column named 'client' to use for detecting an IP address
+log2geo.exe -logdir input -jsoncol data -fullparse -regex : Expand JSON column named 'data' and regex entire line of data for an IP address to enrich
 log2geo.exe -buildti : Initialize/build the indicator database - should only be required once to build threats.db
 log2geo.exe -updateti : Use to download and ingest indicator feed updates
 log2geo.exe -logdir C:\logs -dns -useti -ipcol ipaddress : Parse the logs present in C:\logs and, use DNS to lookup domains on detected IPs and also use the indicator database - look for IPs in column named 'ipaddress'
