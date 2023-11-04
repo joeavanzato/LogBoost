@@ -1,8 +1,8 @@
 # log2geo
  
-log2geo is a command-line utility designed to enrich CSV files with IP address ASN, Country and City information provided by MaxMind GeoLite2 DBs.  
+log2geo is a command-line utility originally designed to enrich IP addresses in CSV files with ASN, Country and City information provided by the freely available MaxMind GeoLite2 DBs.  
 
-While originally intended to support Azure exports, it is possible to use this to enrich any CSV data containing an IP address column to provide
+While at first built to support Azure exports, it is possible to use this to enrich any type of text-based data containing an IP address with parsing support built-in for a number of file types such as IIS, W3C, ELF, CEF and CLF as well as the capability to simple parse entire lines of raw text, which makes it capable of handling any type of text-based data.
 
 In addition to parsing CSV data, log2geo can also convert a limited number of other log-formats to CSV, currently including IIS and W3C formats - generic KV log breaking is being worked on.
 
@@ -13,23 +13,24 @@ On top of this, it is possible to pull down text-based threat intelligence and p
 All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
 
 ### Additional Features
-* Input File Types that can be processed to structured CSV
+* Input File Types that can be processed to a structured CSV
   * CSV
   * Internet Information Services (IIS)
-  * W3C Extended Format
+  * W3C Extended Format (W3C)
+  * Extended Log Format (ELF)
   * Common Log Format / Combined Log Format (CLF)
   * Common Event Format (CEF)
-  * Raw Text-Based Logs - Entire Line stored in column
+  * Generic Syslog
 * Parsing raw text files to extract and enrich detected IP address
 * Filtering outputs on specific date ranges
 * Enriching with MaxMind Geo/ASN Information
 * Enriching with DNS lookups
-* Enriching with threat intelligence configuration
+* Enriching with configurable threat intelligence feeds
 * Ingesting custom intelligence files for downstream use
 * Combining outputs on per-directory basis
-* Customizing concurrency settings to fine-tune efficiency
+* Customizing concurrency settings to fine-tune efficiency/throughput
 * Capable of handling thousands of files concurrently by default
-* Auto-download / update of MaxMind/Threat Intelligence
+* Auto-download / update of MaxMind and configured Threat Intelligence
 
 ### Requirements
 
@@ -41,8 +42,6 @@ This license key must be provided in one of 3 ways to the tool:
 * via file in current working directory named 'mm_api.txt'
 
 The tool will automatically download and extract the latest version of each database if they are not found in the current working directory.
-
-Additionally, if databases are stored elsewhere on disk, a path to the directory may be provided via the 'dbdir' argument.
 
 ### Commandline Arguments
 ```
@@ -107,13 +106,13 @@ log2geo.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -datef
 ```
 
 ### Threat Intelligence Notes
-log2geo is capable of downloading text-based threat feeds, normalizing to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
+log2geo is capable of downloading and normalizing configurable text-based threat intelligence feeds to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
 
-Over 40 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to tell log2geo to download fresh copies of intelligence and ingest to the databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
+Over 40 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to download fresh copies of intelligence and ingest it into the existing databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
 
-Invoke with the 'useti' flag to actually use the database during enrichment processes.
+Include the 'useti' flag to actually use the database during enrichment processes - there is a minor efficiency hit but it is typically negligble.
 
-Adding custom files to the underlying database can be achieved using -intelfile and -inteltype flags.
+Adding custom files to the underlying database can be achieved using the -intelfile and -inteltype flags together.
 
 
 ### TODOs
@@ -124,7 +123,7 @@ Adding custom files to the underlying database can be achieved using -intelfile 
 * Export inline to parquet instead of CSV
 
 ### Performance Considerations
-log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, a minimum of 10,000 goroutines will be spawned.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
+log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, it is possible to spawn 10,000 individual goroutines depending on the -concurrentfiles setting.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
 
 Realistically, this should not cause any issues on most modern machines - a machine with 4 GB of RAM is capable of easily handling ~1,000,000 goroutines - but now we have to take into account the files we are processing - this is where batchsize becomes important.  We must select a batchsize that is appropriate to both the data we are treating as well as the machine we are operating on - the defaults are typically good starting points to ensure work is processed efficiently but should be played with if performance is poor.
 
@@ -132,3 +131,61 @@ Additionally, the -concurrentfiles flag can be used to limit the number of files
 
 On top of this - as lines are sent to the main writer for each output file, they are buffered into a slice before writing to file to help improve throughput - the amount of lines buffered at a time for each output file can be controlled via the -writebuffer parameter - defaulting to 1000.
 
+### Handling Different Log Types
+
+#### CSV
+Handling CSV input is straight forward:
+1. Point log2geo at the logs via '-logdir'
+2. Either tell log2geo which column contains an IP address with '-ipcol' or use '-regex' to have it scan each line for the first non-private IP address
+3. That's it - you can use additional settings if desired such as '-dns', '-useti' or the date filtering flags but this is enough for basic processing of standard CSVs.
+```
+log2geo.exe -logdir C:\csvfiles
+```
+If we are processing a directory that contains time-delimited files, it may be useful to also include '-combine' to push similar files together in each output directory.
+```
+log2geo.exe -logdir C:\csvfiles -combine
+```
+
+#### IIS/W3C/ELF/CLF (Web Server Style Logging)
+1. Tell log2geo where to find the logs via '-logdir'
+2. Include the '-convert' flag so we find files besides .csv
+3. At the core - that is all that is required - if you are processing directories that contain similar files, it may also be useful to include '-combine' to combine the outputs.
+4. Optional flags such as -dns, -useti and the date filtering can also be used if desired.
+```
+log2geo.exe -logdir C:\inetpub\logs -convert -combine
+```
+
+#### Common Event Format (CEF)
+Handling is similar to above - since these are typically not CSV files, we need to use '-convert' flag to find/parse them.
+
+log2geo is currently capable of detecting/parsing 4 types of CEF input, with line samples provided below:
+* CEF with syslog RFC 3164 Header
+  * <6>Sep 14 14:12:51 10.1.1.143 CEF:0|.....
+* CEF with syslog RFC 5424 Header
+  * <34>1 2003-10-11T22:14:15.003Z mymachine.example.com CEF:0|.....
+* CEF with a generic syslog Header
+  * Jun 27 18:19:37 ip-172-31-82-74 systemd[1]: CEF:0|.....
+* CEF without any prefixes/headers
+  * CEF:0|.....
+
+Additionally, log2geo is capable of parsing out all possible K=V extensions in a given file and using these as column headers, in effect 'flattening' the CEF extensions for easier filtering.  This can be enabled via the '-fullparse' flag - this will increase processing time as we need to read the file twice - once to gather all possible headers and again to actually parse it.
+
+#### Generic Syslog
+Nothing special required here - similar to IIS/CEF/etc, just specify your log directory and use '-convert' - but since syslog and similar files normally do not have an extension, make sure to also use '-getall' - this flag makes log2geo try to process any type of file in the log directory, not just .csv, .txt or .log.
+
+By defaut, log2geo can parse generic syslog, RFC5424 and RFC3164, with examples of each provided below.
+* Generic
+  * Jun 27 18:19:37 ip-172-31-82-74 systemd[1]: MESSAGE
+  * Jun 27 18:17:39 ip-172-31-82-74 sudo: MESSAGE
+* RFC 5424
+* <34>1 2003-10-11T22:14:15.003Z mymachine.example.com MESSAGE
+* RFC 3164
+  * <6>Sep 14 14:12:51 10.1.1.143 MESSAGE
+
+#### Any other Text-based files
+While log2geo may not have parsers for every type of log or file-type - it can still help analysts quickly enrich any file type by using regex to find the first non-private IP address in each line of a file and enriching appropriately.
+
+```
+log2geo.exe -logdir C:\somelogs -convert -rawtxt
+```
+Each line of the input file will be included in it's entirety in the first column of the resulting CSV with additional columns added for the log2geo enrichments.
