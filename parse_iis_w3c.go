@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
@@ -21,7 +20,10 @@ func checkIISorW3c(logger zerolog.Logger, inputFile string) (bool, []string, str
 	if err != nil {
 		return false, fields, "", err
 	}
-	scanner := bufio.NewScanner(f)
+	scanner, err := scannerFromFile(f)
+	if err != nil {
+		return false, fields, "", err
+	}
 	for i := 0; i < 8; i++ {
 		if scanner.Scan() {
 			if strings.HasPrefix(strings.ToLower(scanner.Text()), "#fields:") {
@@ -87,7 +89,10 @@ func parseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		return err
 	}
 	idx := 0
-	scanner := bufio.NewScanner(inputF)
+	scanner, err := scannerFromFile(inputF)
+	if err != nil {
+		return err
+	}
 	// Limited to ~65k characters in a single line - won't work with crazy complex log types but should be fine for IIS/W3C
 	var fileWG WaitGroupCount
 	recordChannel := make(chan []string)

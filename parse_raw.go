@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
@@ -31,7 +30,10 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	scanner := bufio.NewScanner(inputF)
+	scanner, err := scannerFromFile(inputF)
+	if err != nil {
+		return err
+	}
 	var fileWG WaitGroupCount
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)

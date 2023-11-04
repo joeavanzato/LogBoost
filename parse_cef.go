@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
@@ -54,11 +53,14 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 	if err != nil {
 		return make([]string, 0), make([]string, 0), -1, nil
 	}
-	scanner := bufio.NewScanner(f)
 	logFormat := -1
+	cefExtensionKeys := make([]string, 0)
+	scanner, err := scannerFromFile(f)
+	if err != nil {
+		return make([]string, 0), cefExtensionKeys, logFormat, nil
+	}
 	idx := 0
 	match := make([]string, 0)
-	cefExtensionKeys := make([]string, 0)
 	for {
 		if scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -184,7 +186,10 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	ipAddressColumn := findTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
 
 	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
-	scanner := bufio.NewScanner(inputF)
+	scanner, err := scannerFromFile(inputF)
+	if err != nil {
+		return err
+	}
 	idx := 0
 	for scanner.Scan() {
 		line := scanner.Text()

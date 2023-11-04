@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
@@ -24,7 +23,10 @@ func checkCLF(logger zerolog.Logger, file string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	scanner := bufio.NewScanner(f)
+	scanner, err := scannerFromFile(f)
+	if err != nil {
+		return -1, err
+	}
 	for {
 		if scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -88,7 +90,10 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
 	}
 	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int))
-	scanner := bufio.NewScanner(inputF)
+	scanner, err := scannerFromFile(inputF)
+	if err != nil {
+		return err
+	}
 	idx := 0
 	for scanner.Scan() {
 		line := scanner.Text()

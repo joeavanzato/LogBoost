@@ -396,3 +396,22 @@ func getDateBounds(tempArgs map[string]any) (time.Time, time.Time) {
 	}
 	return startDate, endDate
 }
+
+func scannerFromFile(reader io.Reader) (*bufio.Scanner, error) {
+	var scanner *bufio.Scanner
+	bReader := bufio.NewReader(reader)
+	testBytes, err := bReader.Peek(2)
+	if err != nil {
+		return nil, err
+	}
+	if testBytes[0] == 31 && testBytes[1] == 139 {
+		gzipReader, err := gzip.NewReader(bReader)
+		if err != nil {
+			return nil, err
+		}
+		scanner = bufio.NewScanner(gzipReader)
+	} else {
+		scanner = bufio.NewScanner(bReader)
+	}
+	return scanner, nil
+}
