@@ -20,12 +20,15 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
   * Extended Log Format (ELF)
   * Common Log Format / Combined Log Format (CLF)
   * Common Event Format (CEF)
+    * Shallow or Deep Parsing
   * JSON per-line logging
+    * Shallow or Deep Parsing
   * Generic Syslog
   * KV (key1=value1, key2="value 2") style logging
+    * Shallow or Deep Parsing
   * Raw Text Files
-* Read plain-text files or GZ archive transparently
-* Expand JSON blobs contained within a CSV to individual columns
+* Read plain-text files or GZ archives transparently
+* Expand JSON blobs embedded within CSV to individual columns
 * Filtering outputs on specific datetime ranges
 * Enriching detected IP with MaxMind Geo/ASN Information
 * Enriching detected IP with DNS lookups
@@ -47,6 +50,8 @@ This license key must be provided in one of 3 ways to the tool:
 * via file in current working directory named 'mm_api.txt'
 
 The tool will automatically download and extract the latest version of each database if they are not found in the current working directory.
+
+Updates to local databases can be triggered via '-updategeo' flag.
 
 ### Commandline Arguments
 ```
@@ -178,6 +183,12 @@ log2geo is currently capable of detecting/parsing 4 types of CEF input, with lin
 
 Additionally, log2geo is capable of parsing out all possible K=V extensions in a given file and using these as column headers, in effect 'flattening' the CEF extensions for easier filtering.  This can be enabled via the '-fullparse' flag - this will increase processing time as we need to read the file twice - once to gather all possible headers and again to actually parse it.
 
+#### JSON
+log2geo is capable of fully parsing JSON per-line logging 
+
+#### KV Messages
+
+
 #### Generic Syslog
 Nothing special required here - similar to IIS/CEF/etc, just specify your log directory and use '-convert' - but since syslog and similar files normally do not have an extension, make sure to also use '-getall' - this flag makes log2geo try to process any type of file in the log directory, not just .csv, .txt or .log.
 
@@ -198,8 +209,10 @@ log2geo.exe -logdir C:\somelogs -convert -rawtxt
 ```
 Each line of the input file will be included in it's entirety in the first column of the resulting CSV with additional columns added for the log2geo enrichments.
 
+To analyze all files in a directory regardless of extension, use '-getall' - the use of '-convert' will only pick up .txt/.log files by default without this.
+
 #### References
-This section lists any pages, articles or other content used during the building or execution of this tool.
+This section lists any pages, articles, packages or other content that was relied upon or found useful while building this utility.
 * https://www.maxmind.com/en/home
 * https://github.com/korylprince/ipnetgen
 * https://github.com/rs/zerolog
