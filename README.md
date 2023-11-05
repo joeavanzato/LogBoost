@@ -22,6 +22,7 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
   * Common Event Format (CEF)
   * JSON per-line logging
   * Generic Syslog
+  * KV (key1=value1, key2="value 2") style logging
   * Raw Text Files
 * Read plain-text files or GZ archive transparently
 * Expand JSON blobs contained within a CSV to individual columns
@@ -69,8 +70,8 @@ The tool will automatically download and extract the latest version of each data
 -rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified - should be used with -convert.
 -fullparse [bool] - Specify to perform 'deep' key detection on file formats with variable columns such as CSVs with JSON Blobs, CEF, JSON, etc - will increase processing time since we have to read the whole file twice basically.
  
--separator [string] (default="=") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
--delimiter [string] (default=" ") - [TODO] Used when -convert is specified and a file cannot be identified as IIS/W3C/CSV
+-separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging
+-delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging
 
 -dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains.
  
