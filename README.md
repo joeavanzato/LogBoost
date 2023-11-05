@@ -128,12 +128,10 @@ Include the 'useti' flag to actually use the database during enrichment processe
 
 Adding custom text-based files to the underlying database can be achieved using the -intelfile and -inteltype flags together.
 
-### TODOs
-* Add capability to 'flatten' JSON columns embedded within a CSV
-* Add JSON-logging parse capabilities 
-* Add KV parsing capabilities
+### Feature TODOs
 * Add ability to specify multiple IP address column names when processing a variety of log types simultaneously.
-* Export inline to parquet instead of CSV
+* Ensure there is no collision between embedded JSON keys and existing column names by re-mapping names.
+* Maybe: Export inline to parquet instead of CSV
 
 ### Performance Considerations
 log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, it is possible to spawn 10,000 individual goroutines depending on the -concurrentfiles setting.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
@@ -157,6 +155,10 @@ log2geo.exe -logdir C:\csvfiles
 If we are processing a directory that contains time-delimited files, it may be useful to also include '-combine' to push similar files together in each output directory.
 ```
 log2geo.exe -logdir C:\csvfiles -combine
+```
+To expand an embedded JSON blob, use '-jsoncol' and provide the column name - by default, 'AuditData' is used to help with Azure Audit Exports.  Also use fullparse to enable this functionality.
+```
+log2geo.exe -logdir C:\csvwithjson -jsoncol "jsondata" -fullparse
 ```
 
 #### IIS/W3C/ELF/CLF (Web Server Style Logging)
@@ -184,10 +186,40 @@ log2geo is currently capable of detecting/parsing 4 types of CEF input, with lin
 Additionally, log2geo is capable of parsing out all possible K=V extensions in a given file and using these as column headers, in effect 'flattening' the CEF extensions for easier filtering.  This can be enabled via the '-fullparse' flag - this will increase processing time as we need to read the file twice - once to gather all possible headers and again to actually parse it.
 
 #### JSON
-log2geo is capable of fully parsing JSON per-line logging 
+log2geo is capable of performing either shallow or deep parsing of per-line JSON message logging such as below:
+```
+{"type":"liberty_accesslog","host":"79e8ad2347b3","ibm_userDir":"\/opt\/ibm\/wlp\/usr\/","ibm_serverName":"defaultServer","ibm_remoteHost":"172.27.0.10","ibm_requestProtocol":"HTTP\/1.1","ibm_userAgent":"Apache-CXF/3.3.3-SNAPSHOT","ibm_requestHeader_headername":"header_value","ibm_requestMethod":"GET","ibm_responseHeader_connection":"Close","ibm_requestPort":"9080","ibm_requestFirstLine":"GET \/favicon.ico HTTP\/1.1","ibm_responseCode":200,"ibm_requestStartTime":"2020-07-14T13:28:19.887-0400","ibm_remoteUserID":"user","ibm_uriPath":"\/favicon.ico","ibm_elapsedTime":834,"ibm_accessLogDatetime":"2020-07-14T13:28:19.887-0400","ibm_remoteIP":"172.27.0.9","ibm_requestHost":"172.27.0.9","ibm_bytesSent":15086,"ibm_bytesReceived":15086,"ibm_cookie_cookiename":"cookie_value","ibm_requestElapsedTime":3034,"ibm_datetime":"2020-07-14T13:28:19.887-0400","ibm_sequence":"1594747699884_0000000000001"}
+{"type":"liberty_accesslog","host":"79e8ad2347b3","ibm_userDir":"\/opt\/ibm\/wlp\/usr\/","ibm_serverName":"defaultServer","ibm_remoteHost":"172.27.0.10","ibm_requestProtocol":"HTTP\/1.1","ibm_userAgent":"Apache-CXF/3.3.3-SNAPSHOT","ibm_requestHeader_headername":"header_value","ibm_requestMethod":"GET","ibm_responseHeader_connection":"Close","ibm_requestPort":"9080","ibm_requestFirstLine":"GET \/favicon.ico HTTP\/1.1","ibm_responseCode":200,"ibm_requestStartTime":"2020-07-14T13:28:19.887-0400","ibm_remoteUserID":"user","ibm_uriPath":"\/favicon.ico","ibm_elapsedTime":834,"ibm_accessLogDatetime":"2020-07-14T13:28:19.887-0400","ibm_remoteIP":"172.27.0.9","ibm_requestHost":"172.27.0.9","ibm_bytesSent":15086,"ibm_bytesReceived":15086,"ibm_cookie_cookiename":"cookie_value","ibm_requestElapsedTime":3034,"ibm_datetime":"2020-07-14T13:28:19.887-0400","ibm_sequence":"1594747699884_0000000000001"}
+```
+A 'shallow' parse is reading one line from the file and using only the keys present in that line as columns - any extra keys will be stored in a column named 'EXTRA_KEYS' as a raw string when parsing.
+```
+log2geo.exe -logdir C:\jsonlogs -convert
+```
+To 'deep' parse a file means to read the entire thing once to gather all possible keys then to read again to actually parse and assign values based on detected keys.  To enable this, add -fullparse as below:
+```
+log2geo.exe -logdir C:\jsonlogs -convert -fullparse
+```
+
 
 #### KV Messages
-
+log2geo is (mostly) capable of handling standard KV-style log formats - the default delimiter is '=' and the default kv separator is ',' - for example, to parse a file containing lines such as:
+```
+timestamp="Jun 12 2023 00:00:00.000", source=host1, message="test message", ip=1.1.1.1
+timestamp="Jun 12 2023 00:00:00.000", source=host1, message="test message", ip=1.1.1.1 
+```
+Just use the below commandline:
+```
+log2geo.exe -logdir C:\kvlogs -convert
+```
+Since this file uses standard separator/delimiter, nothing special is required.  If instead the file looked like this:
+```
+timestamp:"Jun 12 2023 00:00:00.000"| source:host1| message:"test message"| ip:1.1.1.1
+timestamp:"Jun 12 2023 00:00:00.000"| source:host1| message:"test message"| ip:1.1.1.1 
+```
+Then alter your command like below:
+```
+log2geo.exe -logdir C:\kvlogs -convert -separator "|" -delimiter ":"
+```
 
 #### Generic Syslog
 Nothing special required here - similar to IIS/CEF/etc, just specify your log directory and use '-convert' - but since syslog and similar files normally do not have an extension, make sure to also use '-getall' - this flag makes log2geo try to process any type of file in the log directory, not just .csv, .txt or .log.
