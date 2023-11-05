@@ -63,6 +63,7 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
 	// Download It First
+	// TODO - Uncomment when done testing
 	err := downloadFile(logger, maxMindURLs[k], gzFile, k)
 	if err != nil {
 		logger.Error().Msg("Problem Downloading File!")
@@ -73,13 +74,16 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 	r, err := os.Open(gzFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
+		r.Close()
 		return err
 	}
 	err = ExtractTarGz(r, logger, dir)
 	if err != nil {
 		logger.Error().Msg(err.Error())
+		r.Close()
 		return err
 	}
+	r.Close()
 	// Once we extract, we need to find the actual mmdb file which will be located within a newly created directory of the naming format GeoLite2-KEY_*
 	globPattern := fmt.Sprintf("%v\\GeoLite2-%v_*\\GeoLite2-%v.mmdb", dir, k, k)
 	file, err := filepath.Glob(globPattern)
@@ -87,7 +91,32 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	maxMindFileLocations[k] = file[0]
+	// Copy desired file out to main dir
+	destFile := fmt.Sprintf("%v.mmdb", k)
+	err = copyFile(file[0], destFile)
+	if err != nil {
+		maxMindFileLocations[k] = file[0]
+	} else {
+		maxMindFileLocations[k] = destFile
+	}
+
+	// Remove downloaded gz
+	err = os.Remove(gzFile)
+	if err != nil {
+		logger.Error().Msgf("Error Removing Temp Zip: %v", err.Error())
+	}
+
+	tempDirPattern := fmt.Sprintf("%v\\GeoLite2-%v_*", dir, k)
+	dirlist, err := filepath.Glob(tempDirPattern)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return err
+	}
+	// Remove extracted GZ since we have copied file out now to $KEY.mmdb
+	err = os.RemoveAll(dirlist[0])
+	if err != nil {
+		logger.Error().Msgf("Error Removing Temp Dir: %v", err.Error())
+	}
 	return nil
 }
 
