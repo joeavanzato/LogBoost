@@ -17,9 +17,9 @@ import (
 //Log sample
 //Oct 12 04:16:11 localhost CEF:0|nxlog.org|nxlog|2.7.1243|Executable Code was Detected|Advanced exploit detected|100|src=192.168.255.110 spt=46117 dst=172.25.212.204 dpt=80
 
-var cef_syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
-var cef_syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
-var cef_syslog_generic = regexp.MustCompile(`^(?P<timestamp>[a-zA-Z]{3}\s{1,3}\d{1,2}\s\d{1,2}:\d{2}:\d{2})\s(?P<source>.*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-Za-z]{3}\s\d{2}\s\d{2}:\d{2}:\d{2})\s(?:<.+>\s){0,1}(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?:<.+>\s){0,1}(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
+var cef_syslog_generic = regexp.MustCompile(`^(?P<timestamp>[a-zA-Z]{3}\s{1,3}\d{1,2}\s\d{1,2}:\d{2}:\d{2})\s(?:<.+>\s){0,1}(?P<source>.*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<CEFALL>CEF.*)`)
 
 func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, []string, int, error) {
 	// Determines if a file is CEF - if so, returns all possible headers
