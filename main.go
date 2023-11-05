@@ -280,8 +280,9 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 	} else if arguments["convert"].(bool) || getAllFiles {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
-		// 1 - Check if file is IIS/W3C Log and Handle
-		// 2 - If not (missing Fields# line - then assume it is some type of kv logging and use known separator/delimiter to parse out records
+		//
+		// We will do checks from more specific to least specific to help prevent any mismatches on the file type
+
 		isIISorW3c, fields, delim, err := checkIISorW3c(logger, inputFile)
 		if err != nil {
 			return
@@ -342,6 +343,19 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				logger.Info().Msgf("Processing SYSLOG: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
 				parseErr := parseSyslog(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isSyslog)
+				if parseErr != nil {
+					logger.Error().Msg(parseErr.Error())
+				}
+			}
+		}
+
+		// Can we detect KV-style based on provided delimiters/separators - defaults to 'k=v,k2=v2,k3="v3"' style logging
+		if !fileProcessed {
+			isKV, headers, _ := checkKV(logger, inputFile, arguments)
+			if isKV {
+				logger.Info().Msgf("Processing KV: %v --> %v", inputFile, outputFile)
+				fileProcessed = true
+				parseErr := parseKV(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, headers)
 				if parseErr != nil {
 					logger.Error().Msg(parseErr.Error())
 				}
