@@ -615,7 +615,7 @@ func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error
 
 func main() {
 	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
-	start := time.Now()
+
 	logger := setupLogger()
 	arguments, err := parseArgs(logger)
 	if err != nil {
@@ -677,6 +677,8 @@ func main() {
 	if APIerr != nil && Finderr != nil {
 		return
 	}
+
+	start := time.Now()
 	logFiles, err := findLogsToProcess(arguments, logger)
 	if err != nil {
 		return
