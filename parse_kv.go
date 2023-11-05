@@ -12,6 +12,8 @@ import (
 	"sync"
 )
 
+// TODO - Probably need to make this more robust in case the field values contain escaped delimiter/separator (\sep, \delim) - what we should do is replace each instance in the line and then put back in when we are done.
+
 var kv_equals_base = regexp.MustCompile(`(?P<key>[^=\s]+)=\"{0,1}(?P<value>[^,]+)\"{0,1},?`)
 
 func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool, []string, error) {
