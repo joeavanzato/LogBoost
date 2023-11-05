@@ -8,6 +8,8 @@ import (
 
 const logFile = "log2geo.log"
 
+var extraKeysColumnName = "EXTRA_KEYS"
+
 var auditLogIPRegex = regexp.MustCompile(`.*ClientIP":"(?P<ClientIP>.*?)",.*`)
 
 var geoLiteASNDBURL = ""

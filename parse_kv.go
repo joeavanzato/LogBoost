@@ -13,7 +13,6 @@ import (
 )
 
 var kv_equals_base = regexp.MustCompile(`(?P<key>[^=\s]+)=\"{0,1}(?P<value>[^,]+)\"{0,1},?`)
-var extra_column = "EXTRA_KEYS"
 
 func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool, []string, error) {
 	regex_ := fmt.Sprintf(`(?P<key>[^%v\s]+)%v\"{0,1}(?P<value>[^%v]+)\"{0,1}%v?`, arguments["separator"].(string), arguments["separator"].(string), arguments["delimiter"].(string), arguments["delimiter"].(string))
@@ -58,7 +57,7 @@ func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool
 			if fullparse {
 				continue
 			} else {
-				headers = append(headers, extra_column)
+				headers = append(headers, extraKeysColumnName)
 				return true, headers, nil
 			}
 		} else {
@@ -187,7 +186,7 @@ func buildKVRecord(line string, kvheaders []string, regex *regexp.Regexp) []stri
 			tempRecord[headerIndex] = v[2]
 		}
 	}
-	extraIndex := findTargetIndexInSlice(kvheaders, extra_column)
+	extraIndex := findTargetIndexInSlice(kvheaders, extraKeysColumnName)
 	if extraIndex != -1 {
 		tempRecord[extraIndex] = tmpExtra
 	}

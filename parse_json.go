@@ -13,7 +13,7 @@ import (
 	"sync"
 )
 
-func checkJSON(logger zerolog.Logger, file string) (bool, []string, error) {
+func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []string, error) {
 	// Check if we can successfully unmarshall the first line of the file - if yes, we assume it is JSON-per-line based logging
 	f, err := os.Open(file)
 	keys := make([]string, 0)
@@ -44,11 +44,20 @@ func checkJSON(logger zerolog.Logger, file string) (bool, []string, error) {
 			if jsonErr != nil {
 				return false, keys, jsonErr
 			}
+
 			for k, _ := range result {
 				if findTargetIndexInSlice(keys, k) == -1 {
 					keys = append(keys, k)
 				}
 			}
+
+			if fullParse {
+				continue
+			} else {
+				keys = append(keys, extraKeysColumnName)
+				return true, keys, nil
+			}
+
 		} else {
 			break
 		}
@@ -167,35 +176,60 @@ func buildRecordJSON(line string, jsonKeys []string) []string {
 		return make([]string, 0)
 	}
 	tempRecord := make([]string, len(jsonKeys))
+	tmpExtra := ""
 
 	for k, v := range keymap {
 		headerIndex := findTargetIndexInSlice(jsonKeys, k)
-		if headerIndex == -1 {
-			// Error - could not find a key in the headers so we will skip it - should never happen since we use the same parsing logic both runs.
-			continue
-		}
+		/*		if headerIndex == -1 {
+				continue
+			}*/
 		switch vv := v.(type) {
 		case string:
+			if headerIndex == -1 {
+				tmpExtra += fmt.Sprintf("%v:%v, ", k, v.(string))
+				continue
+			}
 			tempRecord[headerIndex] = v.(string)
 		case float64:
+			if headerIndex == -1 {
+				tmpExtra += fmt.Sprintf("%v:%v, ", k, strconv.FormatFloat(v.(float64), 'E', -1, 64))
+				continue
+			}
 			tempRecord[headerIndex] = strconv.FormatFloat(v.(float64), 'E', -1, 64)
 		case []interface{}:
 			s := make([]string, len(vv))
 			for i, u := range vv {
 				s[i] = fmt.Sprint(u)
 			}
+			if headerIndex == -1 {
+				tmpExtra += fmt.Sprintf("%v:%v, ", k, s)
+				continue
+			}
 			tempRecord[headerIndex] = fmt.Sprint(s)
 		case bool:
+			if headerIndex == -1 {
+				tmpExtra += fmt.Sprintf("%v:%v, ", k, strconv.FormatBool(v.(bool)))
+				continue
+			}
 			tempRecord[headerIndex] = strconv.FormatBool(v.(bool))
 		case map[string]interface{}:
 			s := make(map[string]string, len(vv))
 			for kk, uu := range vv {
 				s[kk] = fmt.Sprint(uu)
 			}
+			if headerIndex == -1 {
+				tmpExtra += fmt.Sprintf("%v:%v, ", k, s)
+				continue
+			}
 			tempRecord[headerIndex] = fmt.Sprint(s)
 		default:
-			fmt.Println(v)
+			r := fmt.Sprintf("Error: Unhandled Type: %v", v)
+			fmt.Println(r)
 		}
+	}
+	extraIndex := findTargetIndexInSlice(jsonKeys, extraKeysColumnName)
+	if extraIndex != -1 {
+		tempRecord[extraIndex] = tmpExtra
 	}
 	return tempRecord
 }
