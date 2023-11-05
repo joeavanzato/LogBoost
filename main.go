@@ -297,8 +297,8 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			}
 		}
 		// JSON-based per-line logging Check
-		if !fileProcessed && arguments["fullparse"].(bool) {
-			isJSON, headers, _ := checkJSON(logger, inputFile)
+		if !fileProcessed {
+			isJSON, headers, _ := checkJSON(logger, inputFile, arguments["fullparse"].(bool))
 			if isJSON {
 				logger.Info().Msgf("Processing JSON: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
