@@ -8,10 +8,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 )
 
 func downloadFile(logger zerolog.Logger, url string, filepath string, key string) (err error) {
-	logger.Info().Msgf("Downloading File %v to path: %v", url, filepath)
+	if strings.HasPrefix(url, "https://download.maxmind.com") {
+		logger.Info().Msgf("Downloading MaxMind %v DB to path: %v", key, filepath)
+	} else {
+		logger.Info().Msgf("Downloading File %v to path: %v", url, filepath)
+	}
 	out, err := os.Create(filepath)
 	if err != nil {
 		return err
