@@ -75,8 +75,8 @@ Updates to local databases can be triggered via '-updategeo' flag.
 -rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified - should be used with -convert.
 -fullparse [bool] - Specify to perform 'deep' key detection on file formats with variable columns such as CSVs with JSON Blobs, CEF, JSON, etc - will increase processing time since we have to read the whole file twice basically.
  
--separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging
--delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging
+-separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the separator would be '='
+-delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the delimiter would be ','
 
 -dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains.
  
