@@ -20,7 +20,7 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 	}
 
 	logger.Info().Msgf("Checking Directory '%v' for MaxMind DBs", dir)
-	globPattern := fmt.Sprintf("%v\\**\\GeoLite2-*.mmdb", dir)
+	globPattern := fmt.Sprintf("%v\\GeoLite2-*.mmdb", dir)
 	entries, err := filepath.Glob(globPattern)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -92,7 +92,7 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 		return err
 	}
 	// Copy desired file out to main dir
-	destFile := fmt.Sprintf("%v.mmdb", k)
+	destFile := fmt.Sprintf("GeoLite2-%v.mmdb", k)
 	err = copyFile(file[0], destFile)
 	if err != nil {
 		maxMindFileLocations[k] = file[0]
