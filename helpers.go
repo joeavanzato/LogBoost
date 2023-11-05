@@ -134,22 +134,23 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 	tarReader := tar.NewReader(uncompressedStream)
 	for true {
 		header, err := tarReader.Next()
-
 		if err == io.EOF {
 			break
 		}
-
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return err
 		}
-
 		switch header.Typeflag {
 		case tar.TypeDir:
 			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
-			if err := os.Mkdir(targetDir, 0755); err != nil {
-				logger.Error().Msg(err.Error())
-				return err
+			err := os.MkdirAll(targetDir, 0755)
+			if err != nil {
+				if os.IsExist(err) {
+				} else {
+					logger.Error().Msgf("Error Extracting: %v", err.Error())
+					return err
+				}
 			}
 		case tar.TypeReg:
 			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
@@ -414,4 +415,32 @@ func scannerFromFile(reader io.Reader) (*bufio.Scanner, error) {
 		scanner = bufio.NewScanner(bReader)
 	}
 	return scanner, nil
+}
+
+func copyFile(src, dst string) error {
+	sourceFileStat, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if !sourceFileStat.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file", src)
+	}
+
+	source, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+	_, err = io.Copy(destination, source)
+	if err != nil {
+		return err
+	}
+	return nil
 }
