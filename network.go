@@ -9,9 +9,20 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 var privateIPBlocks []*net.IPNet
+
+var resolver = &net.Resolver{
+	PreferGo: true,
+	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+		d := net.Dialer{
+			Timeout: time.Millisecond * time.Duration(10000),
+		}
+		return d.DialContext(ctx, network, "1.1.1.1:53")
+	},
+}
 
 func setupPrivateNetworks() error {
 	for _, cidr := range []string{
