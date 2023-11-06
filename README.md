@@ -142,6 +142,14 @@ Additionally, the -concurrentfiles flag can be used to limit the number of files
 
 On top of this - as lines are sent to the main writer for each output file, they are buffered into a slice before writing to file to help improve throughput - the amount of lines buffered at a time for each output file can be controlled via the -writebuffer parameter - defaulting to 1000.
 
+### DNS Notes
+log2geo is capable of generating an enormous amount of DNS queries depending on the input data - when an execution is started, an in-memory cache is established to hold DNS record responses for each detected IP address - this helps reduce redundant DNS requests for the same IP address, improving overall throughput.
+
+Still, be aware that '-dns' can have a large impact on the overall execution time when dealing with a large amount of IP addresses - it may make sense to reduce overall batch size and increase maxgoperfile to help split DNS requests across more go routines.
+
+Additionally - it is possible for DNS requests to be throttled by upstream servers such as Google DNS - this can be an issue when dealing with a large amount of data.
+
+To help mitigate this, DNS results are cached for re-use - when execution is complete, the cache is saved to the directory 'dns.cache' - this cache is re-used on any additional execution from the same working directory - this means that if an IP address exists in the cache, we will not make new queries for it.  If you want to perform 'fresh' queries, just delete the cache directory and it will be rebuilt automatically.
 ### Handling Different Log Types
 
 #### CSV
@@ -249,6 +257,7 @@ This section lists any pages, articles, packages or other content that was relie
 * https://github.com/korylprince/ipnetgen
 * https://github.com/rs/zerolog
 * https://github.com/mattn/go-sqlite3
+* https://github.com/VictoriaMetrics/fastcache
 * https://stackoverflow.com/questions/28309988/how-to-read-from-either-gzip-or-plain-text-reader-in-golang/28332019#28332019
 
 #### Included Indicator Feeds
