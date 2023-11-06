@@ -342,6 +342,16 @@ func closeChannelWhenDone(c chan []string, wg *WaitGroupCount) {
 	close(c)
 }
 
+func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error) {
+	// Receive a target date and compare to startdate and enddate timestamp - return true if..
+	// If startdate provided with no enddate and eventTimestamp is after startdate
+	// If enddate provided with no startdate and eventTimestamp is before enddate
+	// If both startdate and enddate are provided and eventTimestamp is startdate <= eventTimestamp <= enddate
+
+	// DEPRECATED - doing this in-line at processRecords
+	return false, nil
+}
+
 func readAndSendToChannel(csvFile string, c chan []string, waiter *WaitGroupCount, logger zerolog.Logger, initialHeaders []string) {
 	defer waiter.Done()
 	inputHeaderFile, err := openInput(csvFile)
