@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/allegro/bigcache/v3"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
@@ -17,6 +19,8 @@ import (
 	"sync"
 	"time"
 )
+
+var dnscache, _ = bigcache.New(context.Background(), bigcache.DefaultConfig(10*time.Minute))
 
 func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
@@ -251,6 +255,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 }
 
 func processFile(arguments map[string]any, inputFile string, outputFile string, logger zerolog.Logger, waitGroup *WaitGroupCount, sizeTracker *SizeTracker, t *runningJobs, tempArgs map[string]any) {
+	// TODO - I think there is some type of concurrency bug here - not sure yet - using concurrentfiles = 10 will work when default will not.
 	//logger.Info().Msgf("Processing: %v --> %v", inputFile, outputFile)
 	defer t.SubJob()
 	defer waitGroup.Done()
@@ -445,7 +450,7 @@ func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.R
 func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	// Finds the most appropriate IP address column to enrich from an embedded Azure AD JSON Event (IE MessageTracking, Audit, etc)
 	// Instead of parsing json, probably easier to just use a regex matching the potential patterns.
-	// TODO - Add additional common regex for known JSON structures
+	// TODO - Add additional common regex for known data structures
 
 	//result := make(map[string]interface{})
 	//err := json.Unmarshal([]byte(jsonBlob), &result)
@@ -464,7 +469,6 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, tempArgs map[string]any) []string {
 	// Columns this function should append to input record (in order): ASN, Country, City, Domains, TOR, SUSPICIOUS, PROXY
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
-
 	ipString := ""
 	var exists bool
 	if ipAddressColumn != -1 {
@@ -492,6 +496,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
+
 	if ipString == "" {
 		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA")
 		return record
@@ -505,12 +510,14 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, ipString, "PVT", "PVT", "PVT", "PVT", "PVT")
 		return record
 	}
-
-	ipStruct, IPCacheExists := CheckIP(ipString)
-	if IPCacheExists {
-		record = append(record, ipString, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, strings.Join(ipStruct.Domains, "|"), ipStruct.ThreatCat)
-		return record
-	}
+	/*	if useDNS {
+		// Only use caching if we are using DNS - DB checks are fast enough that performance is impacted in a negative way if we use this all the time.
+		ipStruct, IPCacheExists := CheckIP(ipString)
+		if IPCacheExists {
+			record = append(record, ipString, ipStruct.ASNOrg, ipStruct.Country, ipStruct.City, strings.Join(ipStruct.Domains, "|"), ipStruct.ThreatCat)
+			return record
+		}
+	}*/
 
 	record = append(record, ipString)
 
@@ -546,9 +553,18 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
 		// TODO - Consider adding DomainCount column
 		//records, dnsExists := CheckIPDNS(ipString)
-		dnsRecords := lookupIPRecords(ipString)
-		ipTmpStruct.Domains = dnsRecords
-		record = append(record, strings.Join(dnsRecords, "|"))
+		entry, dnscacheerr := dnscache.Get(ipString)
+		if dnscacheerr == nil {
+			record = append(record, string(entry))
+		} else {
+			dnsRecords := lookupIPRecords(ipString)
+			ipTmpStruct.Domains = dnsRecords
+			record = append(record, strings.Join(dnsRecords, "|"))
+			setdnserr := dnscache.Set(ipString, []byte(strings.Join(dnsRecords, "|")))
+			if setdnserr != nil {
+				logger.Error().Msg(setdnserr.Error())
+			}
+		}
 		/*		if dnsExists {
 					ipTmpStruct.Domains = records
 					record = append(record, strings.Join(records, "|"))
@@ -587,7 +603,10 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		ipTmpStruct.ThreatCat = "NA"
 		record = append(record, "NA")
 	}
-	AddIP(ipString, ipTmpStruct)
+
+	/*	if useDNS {
+		AddIP(ipString, ipTmpStruct)
+	}*/
 	return record
 }
 
@@ -601,16 +620,6 @@ func getCSVHeaders(csvFile string) ([]string, error) {
 	}
 	return headers, nil
 
-}
-
-func isDateInRange(eventTimestamp string, arguments map[string]any) (bool, error) {
-	// Receive a target date and compare to startdate and enddate timestamp - return true if..
-	// If startdate provided with no enddate and eventTimestamp is after startdate
-	// If enddate provided with no startdate and eventTimestamp is before enddate
-	// If both startdate and enddate are provided and eventTimestamp is startdate <= eventTimestamp <= enddate
-
-	// DEPRECATED - doing this in-line at processRecords
-	return false, nil
 }
 
 func main() {
