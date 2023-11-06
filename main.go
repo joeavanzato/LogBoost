@@ -1,13 +1,12 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/csv"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/allegro/bigcache/v3"
+	"github.com/VictoriaMetrics/fastcache"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
@@ -22,47 +21,10 @@ import (
 
 var cacheEntrySizeLimit = 500
 
-var bcconfig = bigcache.Config{
-	// number of shards (must be a power of 2)
-	Shards: 1024,
+var dnsCacheFile = "dns.cache"
 
-	// time after which entry can be evicted
-	LifeWindow: 10 * time.Minute,
-
-	// Interval between removing expired entries (clean up).
-	// If set to <= 0 then no action is performed.
-	// Setting to < 1 second is counterproductive — bigcache has a one second resolution.
-	CleanWindow: 0,
-
-	// rps * lifeWindow, used only in initial memory allocation
-	MaxEntriesInWindow: 1000 * 10 * 60,
-
-	// max entry size in bytes, used only in initial memory allocation
-	// TODO - Trunce cache entries to 499 bytes to fit
-	MaxEntrySize: cacheEntrySizeLimit,
-
-	// prints information about additional memory allocation
-	Verbose: false,
-
-	// cache will not allocate more memory than this limit, value in MB
-	// if value is reached then the oldest entries can be overridden for the new ones
-	// 0 value means no size limit
-	HardMaxCacheSize: 1024,
-
-	// callback fired when the oldest entry is removed because of its expiration time or no space left
-	// for the new entry, or because delete was called. A bitmask representing the reason will be returned.
-	// Default value is nil which means no callback and it prevents from unwrapping the oldest entry.
-	OnRemove: nil,
-
-	// OnRemoveWithReason is a callback fired when the oldest entry is removed because of its expiration time or no space left
-	// for the new entry, or because delete was called. A constant representing the reason will be passed through.
-	// Default value is nil which means no callback and it prevents from unwrapping the oldest entry.
-	// Ignored if OnRemove is specified.
-	OnRemoveWithReason: nil,
-}
-
-var dnscache, _ = bigcache.New(context.Background(), bcconfig)
-var ticache, _ = bigcache.New(context.Background(), bigcache.DefaultConfig(10*time.Minute))
+// 1 GB max cache size
+var dnsfastcache = fastcache.LoadFromFileOrNew(dnsCacheFile, 1_000_000_000)
 
 func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
@@ -240,6 +202,8 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 		tempArgs["enddate"] = ""
 	}
 	//startDate, endDate := getDateBounds(tempArgs)
+
+	// TODO - Check for DomainDB and add to TempArgs as a temporary measure - if this exists, we will use it instead of live DNS lookup
 
 	for _, file := range logFiles {
 		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
@@ -595,35 +559,36 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
 		// TODO - Consider adding DomainCount column
 		//records, dnsExists := CheckIPDNS(ipString)
-		entry, dnscacheerr := dnscache.Get(ipString)
-		if dnscacheerr == nil {
-			record = append(record, string(entry))
+		value := make([]byte, 0)
+		value, existsInCache := dnsfastcache.HasGet(value, []byte(ipString))
+		if existsInCache {
+			record = append(record, string(value))
 		} else {
 			dnsRecords := lookupIPRecords(ipString)
-			//ipTmpStruct.Domains = dnsRecords
 			record = append(record, strings.Join(dnsRecords, "|"))
 			recordsJoined := strings.Join(dnsRecords, "|")
-			recordsBytes := make([]byte, 0)
-			res := []rune(recordsJoined)
-			// Naive string truncation based on ASCII mostly to fit into cache entry limit
-			if len(res) > cacheEntrySizeLimit {
-				recordsBytes = []byte(recordsJoined)[:cacheEntrySizeLimit]
-			} else {
-				recordsBytes = []byte(recordsJoined)
-			}
-			setdnserr := dnscache.Set(ipString, recordsBytes)
-			if setdnserr != nil {
-				logger.Error().Msg(setdnserr.Error())
-			}
+			dnsfastcache.Set([]byte(ipString), []byte(recordsJoined))
 		}
-		/*		if dnsExists {
-					ipTmpStruct.Domains = records
-					record = append(record, strings.Join(records, "|"))
+		/*		entry, dnscacheerr := dnscache.Get(ipString)
+				if dnscacheerr == nil {
+					record = append(record, string(entry))
 				} else {
 					dnsRecords := lookupIPRecords(ipString)
-					//AddIPDNS(ipString, dnsRecords)
-
-					record = append(record, strings.Join(records, "|"))
+					//ipTmpStruct.Domains = dnsRecords
+					record = append(record, strings.Join(dnsRecords, "|"))
+					recordsJoined := strings.Join(dnsRecords, "|")
+					recordsBytes := make([]byte, 0)
+					res := []rune(recordsJoined)
+					// Naive string truncation based on ASCII mostly to fit into cache entry limit
+					if len(res) > cacheEntrySizeLimit {
+						recordsBytes = []byte(recordsJoined)[:cacheEntrySizeLimit]
+					} else {
+						recordsBytes = []byte(recordsJoined)
+					}
+					setdnserr := dnscache.Set(ipString, recordsBytes)
+					if setdnserr != nil {
+						logger.Error().Msg(setdnserr.Error())
+					}
 				}*/
 	} else {
 		record = append(record, "")
@@ -753,5 +718,9 @@ func main() {
 			logger.Error().Msg(Cerr.Error())
 		}
 		return
+	}
+	saveCacheErr := dnsfastcache.SaveToFile(dnsCacheFile)
+	if saveCacheErr != nil {
+		logger.Error().Msg(saveCacheErr.Error())
 	}
 }
