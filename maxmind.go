@@ -42,8 +42,9 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 
 	for k, v := range maxMindStatus {
 		if v == true {
-			logger.Info().Msgf("Found %v DB file at: %v", k, maxMindFileLocations[k])
+			logger.Info().Msgf("Found Existing %v DB file at: %v", k, maxMindFileLocations[k])
 			if arguments["updategeo"].(bool) {
+				logger.Info().Msgf("Updating Local MaxMind %v DB", k)
 				err = updateMaxMind(logger, dir, k)
 				if err != nil {
 					return err
