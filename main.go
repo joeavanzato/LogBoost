@@ -19,8 +19,6 @@ import (
 	"time"
 )
 
-var cacheEntrySizeLimit = 500
-
 var dnsCacheFile = "dns.cache"
 
 // 1 GB max cache size
@@ -527,31 +525,31 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 
 	record = append(record, ipString)
 
-	ipTmpStruct := IPCache{
+	/*	ipTmpStruct := IPCache{
 		ASNOrg:    "",
 		Country:   "",
 		City:      "",
 		Domains:   make([]string, 0),
 		ThreatCat: "",
-	}
+	}*/
 	tmpCity := City{}
 	tmpAsn := ASN{}
 	err := asnDB.Lookup(ip, &tmpAsn)
 	if err != nil {
-		ipTmpStruct.ASNOrg = ""
+		//ipTmpStruct.ASNOrg = ""
 		record = append(record, "")
 	} else {
-		ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
+		//ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
 		record = append(record, tmpAsn.AutonomousSystemOrganization)
 	}
 	err = cityDB.Lookup(ip, &tmpCity)
 	if err != nil {
-		ipTmpStruct.Country = ""
-		ipTmpStruct.City = ""
+		//ipTmpStruct.Country = ""
+		//ipTmpStruct.City = ""
 		record = append(record, "", "")
 	} else {
-		ipTmpStruct.Country = tmpCity.Country.Names["en"]
-		ipTmpStruct.City = tmpCity.City.Names["en"]
+		//ipTmpStruct.Country = tmpCity.Country.Names["en"]
+		//ipTmpStruct.City = tmpCity.City.Names["en"]
 		record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"])
 	}
 
@@ -559,6 +557,8 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
 		// TODO - Consider adding DomainCount column
 		//records, dnsExists := CheckIPDNS(ipString)
+
+		// fastcache implementation
 		value := make([]byte, 0)
 		value, existsInCache := dnsfastcache.HasGet(value, []byte(ipString))
 		if existsInCache {
@@ -569,6 +569,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 			recordsJoined := strings.Join(dnsRecords, "|")
 			dnsfastcache.Set([]byte(ipString), []byte(recordsJoined))
 		}
+		// Below uses bigcache implementation
 		/*		entry, dnscacheerr := dnscache.Get(ipString)
 				if dnscacheerr == nil {
 					record = append(record, string(entry))
@@ -595,19 +596,20 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	}
 
 	if useIntel {
+		// TODO - Consider setting up in-memory only cache for TI to help speed up if bottlenecks occur
 		matchType, TIexists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
 		if DBError != nil {
-			ipTmpStruct.ThreatCat = "NA"
+			//ipTmpStruct.ThreatCat = "NA"
 			record = append(record, "NA")
 		} else if TIexists {
-			ipTmpStruct.ThreatCat = matchType
-			record = append(record, ipTmpStruct.ThreatCat)
+			//ipTmpStruct.ThreatCat = matchType
+			record = append(record, matchType)
 		} else {
-			ipTmpStruct.ThreatCat = "none"
+			//ipTmpStruct.ThreatCat = "none"
 			record = append(record, "none")
 		}
 	} else {
-		ipTmpStruct.ThreatCat = "NA"
+		//ipTmpStruct.ThreatCat = "NA"
 		record = append(record, "NA")
 	}
 
