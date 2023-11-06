@@ -70,6 +70,7 @@ func lookupIPRecords(ip string) []string {
 }
 
 func isPrivateIP(ip net.IP, ipstring string) bool {
+	// TODO There is also ip.IsPrivate() - does that supercede the need for these checks?
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true
 	}
