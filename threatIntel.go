@@ -267,36 +267,6 @@ func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
 	return "", false, err
 }
 
-func CheckTor(ip string) bool {
-	torCheckMut.RLock()
-	defer torCheckMut.RUnlock()
-	_, e := torNodeMap[ip]
-	return e
-}
-
-func makeTorList(arguments map[string]any, logger zerolog.Logger) {
-	// Deprecated now that we are pulling more holistically
-	_, err := os.Stat(torExitNodeFile)
-	if errors.Is(err, os.ErrNotExist) {
-		err2 := downloadFile(logger, torExitNodeURL, torExitNodeFile, "")
-		if err2 != nil {
-			logger.Error().Msg("Error Downloading TOR Exit Nodes")
-			logger.Error().Msg(err.Error())
-			return
-		}
-	}
-	// File exists - either it already existed or we downloaded it.
-	torNodes := ReadFileToSlice(torExitNodeFile, logger)
-	for _, v := range torNodes {
-		line := strings.TrimSpace(v)
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		torNodeMap[line] = struct{}{}
-	}
-	doTorEnrich = true
-}
-
 func updateVPNList(logger zerolog.Logger) {
 	url := "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt"
 	file := "vpn_full_feed_X4BNet.txt"

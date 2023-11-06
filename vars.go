@@ -3,7 +3,6 @@ package main
 import (
 	"net"
 	"regexp"
-	"sync"
 )
 
 const logFile = "log2geo.log"
@@ -64,10 +63,3 @@ var oneNineTwoDot = net.IPNet{
 
 // Controls whether we collect files in visit() beyond .log, .csv and .txt - set by -getall param
 var getAllFiles = false
-
-// This set of args is now deprecated since we are pulling down tor nodes/exit nodes as part of the -buildti, -updateti, -useti sequence of arguments
-var torExitNodeURL = "https://www.dan.me.uk/torlist/?exit"
-var torExitNodeFile = "tor_exit_nodes.txt"
-var torNodeMap = make(map[string]struct{})
-var doTorEnrich = false
-var torCheckMut = sync.RWMutex{}
