@@ -62,6 +62,9 @@ func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 			break
 		}
 	}
+	if len(keys) == 0 {
+		return false, keys, nil
+	}
 	return true, keys, nil
 }
 
