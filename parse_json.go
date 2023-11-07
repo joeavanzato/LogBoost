@@ -44,12 +44,16 @@ func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 			if jsonErr != nil {
 				return false, keys, jsonErr
 			}
-
-			for k, _ := range result {
-				if findTargetIndexInSlice(keys, k) == -1 {
-					keys = append(keys, k)
-				}
+			for k, v := range result {
+				keys = parseDeepJSONKeys("", k, v, keys)
 			}
+			// Old method - 'shallow'
+
+			/*			for k, _ := range result {
+						if findTargetIndexInSlice(keys, k) == -1 {
+							keys = append(keys, k)
+						}
+					}*/
 
 			if fullParse {
 				continue
@@ -125,7 +129,19 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 			logger.Error().Msg(scanErr.Error())
 			return scanErr
 		}
-		record := buildRecordJSON(line, jsonkeys)
+		// Old method
+		//record := buildRecordJSON(line, jsonkeys)
+		keymap, _ := parseJSONtoMap(line)
+		record := make([]string, len(jsonkeys))
+		tmpExtra := ""
+		for k, v := range keymap {
+			record, tmpExtra = buildDeepRecordJSON("", k, v, headers, record, tmpExtra)
+		}
+		extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
+		if extraIndex != -1 {
+			record[extraIndex] += tmpExtra
+		}
+
 		if len(record) == 0 {
 			// Error parsing or nothing to parse
 			continue
