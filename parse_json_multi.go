@@ -14,6 +14,10 @@ import (
 )
 
 // For parsing multi-line JSON logs such as AWS CloudTrail - very 'fixed' in nature
+// This parsing module is very rigid - it currently only supports any file which begins with one of the strings listed below - anything else will be skipped.
+// If we match this string, it is assumed that there is a list of JSON objects embedded within 'Records' - anything else will cause an error.
+
+var commonJSONMultiLineHeaders = []string{"{\"Records\":[", "{\"Records\": ["}
 
 func checkMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (bool, string, error) {
 	// This will be a naive check that basically examines the first line of the document to identify if it appears to be the start of a multi-line JSON object
@@ -54,7 +58,6 @@ func checkMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (boo
 		}
 	}
 	prefix := strings.Join(limit, "")
-	commonJSONMultiLineHeaders := []string{"{\"Records\":[", "{\"Records\": ["}
 	for _, v := range commonJSONMultiLineHeaders {
 		if strings.HasPrefix(prefix, v) {
 			return true, v, nil
