@@ -47,10 +47,13 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 			if err != nil {
 				continue
 			}
-			for k, _ := range keymap {
-				if findTargetIndexInSlice(jsonKeys, k) == -1 {
-					jsonKeys = append(jsonKeys, k)
-				}
+			/*			for k, _ := range keymap {
+						if findTargetIndexInSlice(jsonKeys, k) == -1 {
+							jsonKeys = append(jsonKeys, k)
+						}
+					}*/
+			for k, v := range keymap {
+				jsonKeys = parseDeepJSONKeys("", k, v, jsonKeys)
 			}
 		} else {
 			break
@@ -60,6 +63,7 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 	// Add Geo fields to current header setup
 	if jsonColumn != -1 {
 		headers = append(headers, jsonKeys...)
+		headers = append(headers, extraKeysColumnName)
 	}
 	headers = append(headers, geoFields...)
 	return ipAddressColumn, jsonColumn, headers, jsonKeys, nil
@@ -102,7 +106,6 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int), &writeWG)
 	for {
 		record, Ferr := newParse.Read()
-
 		if Ferr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
@@ -123,10 +126,25 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		}
 
 		if jsonColumn != -1 && arguments["fullparse"].(bool) {
-			jsonData := buildRecordJSON(record[jsonColumn], jsonKeys)
-			record = append(record, jsonData...)
+			tmpRecord := make([]string, len(jsonKeys))
+			/*			jsonData := buildRecordJSON(record[jsonColumn], jsonKeys)
+						record = append(record, jsonData...)*/
+			keymap, _ := parseJSONtoMap(record[jsonColumn])
+			if len(jsonKeys) == 0 {
+
+			}
+			tmpExtra := ""
+			for k, v := range keymap {
+				tmpRecord, tmpExtra = buildDeepRecordJSON("", k, v, jsonKeys, tmpRecord, tmpExtra)
+			}
+			extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
+			record = append(record, tmpRecord...)
+			if extraIndex != -1 {
+				record = append(record, tmpExtra)
+			}
 		}
 		records = append(records, record)
+
 		if len(records) <= lineBatchSize {
 			continue
 		} else {
