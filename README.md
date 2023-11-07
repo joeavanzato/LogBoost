@@ -55,6 +55,16 @@ The tool will automatically download and extract the latest version of each data
 
 Updates to local databases can be triggered via '-updategeo' flag.
 
+### Outputs
+The ultimate output of running log2geo against one or more input files is a CSV file which represents the original data stream but will contain an additional 7 columns as listed below:
+* l2g_IP - Represents the IP address used for enrichment tasks.
+* l2g_ASN - Represents the name of the ASN Organization associated with the IP address.
+* l2g_Country - Represents the name of the Country associated with the IP address.
+* l2g_City - Represents the name of the City associated with the IP address.
+* l2g_Domains - Represents any domain name associated with the IP address, split by '|' if there are multiple.
+* l2g_ThreatCategory - Represents the threat category associated with the IP address - will be a single string such as 'tor', 'proxy', etc or 'none' if it is not found in the database.
+* l2g_TLD - Represents the Top Level Domain associated with the IP address - only populated if 'GeoIP2-Domain.mmdb' is found in the specified MaxMind DB directory (CWD by default).
+
 ### Commandline Arguments
 ```
 -dbdir [string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
