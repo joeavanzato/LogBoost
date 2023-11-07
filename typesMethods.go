@@ -29,6 +29,10 @@ type ASN struct {
 	AutonomousSystemNumber       uint   `maxminddb:"autonomous_system_number"`
 }
 
+type Domain struct {
+	Domain string `maxminddb:"domain"`
+}
+
 type IPCache struct {
 	ASNOrg    string
 	Country   string

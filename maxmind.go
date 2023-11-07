@@ -20,7 +20,7 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 	}
 
 	logger.Info().Msgf("Checking Directory '%v' for MaxMind DBs", dir)
-	globPattern := fmt.Sprintf("%v\\GeoLite2-*.mmdb", dir)
+	globPattern := fmt.Sprintf("%v\\Geo*.mmdb", dir)
 	entries, err := filepath.Glob(globPattern)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -37,6 +37,9 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 		} else if strings.HasSuffix(e, maxMindFiles["Country"]) {
 			maxMindStatus["Country"] = true
 			maxMindFileLocations["Country"] = e
+		} else if strings.HasSuffix(e, maxMindFiles["Domain"]) {
+			maxMindStatus["Domain"] = true
+			maxMindFileLocations["Domain"] = e
 		}
 	}
 
@@ -44,6 +47,10 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 		if v == true {
 			logger.Info().Msgf("Found Existing %v DB file at: %v", k, maxMindFileLocations[k])
 			if arguments["updategeo"].(bool) {
+				if k == "Domain" {
+					logger.Info().Msg("Skipping Domain DB Update")
+					continue
+				}
 				logger.Info().Msgf("Updating Local MaxMind %v DB", k)
 				err = updateMaxMind(logger, dir, k)
 				if err != nil {
@@ -52,6 +59,10 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 			}
 		} else {
 			logger.Info().Msgf("Could not find %v DB at %v\\%v, downloading!", k, dir, maxMindFiles[k])
+			if k == "Domain" {
+				logger.Info().Msg("Skipping Domain DB Update")
+				continue
+			}
 			err = updateMaxMind(logger, dir, k)
 			if err != nil {
 				return err

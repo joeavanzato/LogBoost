@@ -282,6 +282,16 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		return
 	}
 	defer countryDB.Close()
+	if maxMindStatus["Domain"] {
+		domainDB, err := maxminddb.Open(maxMindFileLocations["Domain"])
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		defer domainDB.Close()
+		tempArgs["domaindb"] = domainDB
+	}
+
 	fileProcessed := false
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
 		logger.Info().Msgf("Processing CSV: %v --> %v", inputFile, outputFile)
@@ -509,7 +519,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		if net.ParseIP(ipString) == nil {
 			ipString, exists = regexFirstPublicIPFromString(record[ipAddressColumn])
 			if !exists {
-				record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+				record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 				return record
 			}
 		}
@@ -520,26 +530,26 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString, exists = regexFirstPublicIPFromString(strings.Join(record, " "))
 		if !exists {
-			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 			return record
 		}
 	} else {
 		// Could not identify which a column storing IP address column or JSON blob and not using regex to find an IP
-		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA")
+		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
 
 	if ipString == "" {
-		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA")
+		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA")
 		return record
 	}
 	ip := net.ParseIP(ipString)
 	if ip == nil {
-		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
 		return record
 	}
 	if isPrivateIP(ip, ipString) {
-		record = append(record, ipString, "PVT", "PVT", "PVT", "PVT", "PVT")
+		record = append(record, ipString, "PVT", "PVT", "PVT", "PVT", "PVT", "PVT")
 		return record
 	}
 	/*	if useDNS {
@@ -644,6 +654,18 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	/*	if useDNS {
 		AddIP(ipString, ipTmpStruct)
 	}*/
+	if maxMindStatus["Domain"] {
+		tmpDomain := Domain{}
+		err := tempArgs["domaindb"].(*maxminddb.Reader).Lookup(ip, &tmpDomain)
+		if err != nil {
+			record = append(record, "NA")
+		} else {
+			record = append(record, tmpDomain.Domain)
+		}
+	} else {
+		record = append(record, "NA")
+	}
+
 	return record
 }
 
