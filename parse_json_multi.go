@@ -321,9 +321,6 @@ func parseDeepJSONKeys(startingKey string, k string, v any, headers []string) []
 		for i, vvv := range vv {
 			_, ok := vvv.(map[string]interface{})
 			if ok {
-				if k == "requestParameters" {
-					fmt.Println("OK")
-				}
 				headers = parseDeepJSONKeys(k, i, vvv, headers)
 			}
 			_, ok2 := vvv.(map[string]any)
