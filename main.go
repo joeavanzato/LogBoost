@@ -320,6 +320,29 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			}
 		}
 
+		// Multi-line JSON Check - in reality we are just checking for some common headers for wellknown logs such as '{"Records": [' for AWS Cloudtrail Log Exports
+		if !fileProcessed {
+			isMLJSON, prefix, _ := checkMultiLineJSON(logger, inputFile, arguments["fullparse"].(bool))
+			if isMLJSON {
+				logger.Info().Msgf("Processing Multi-Line JSON: %v --> %v", inputFile, outputFile)
+				fileProcessed = true
+				headers := parseMultiLineJSONHeaders(inputFile, prefix, arguments["fullparse"].(bool))
+				someError := false
+				if len(headers) == 0 {
+					someError = true
+					fileProcessed = false
+				}
+				if !someError {
+					parseErr := parseMultiLineJSON(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs, headers, prefix)
+					if parseErr != nil {
+						fileProcessed = false
+						logger.Error().Msg(parseErr.Error())
+					}
+				}
+
+			}
+		}
+
 		// CEF Format Check
 		if !fileProcessed {
 			headers, cefKeys, cefFormat, _ := checkCEF(logger, inputFile, arguments["fullparse"].(bool))
@@ -451,7 +474,6 @@ func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.R
 				}
 			}
 		}
-
 		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS, tempArgs)
 		channel <- record
 	}
