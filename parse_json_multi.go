@@ -105,7 +105,6 @@ func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []str
 				continue
 			} else {
 				// TODO error handling
-				headers = append(headers, extraKeysColumnName)
 				break
 			}
 		}
@@ -142,6 +141,7 @@ func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []str
 	}
 	//fmt.Printf("Events Detected: %v\n", eventCount)
 	//fmt.Println(headers)
+	headers = append(headers, extraKeysColumnName)
 	return headers
 }
 
@@ -214,23 +214,22 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 				//fmt.Printf("ERROR PARSING: %v\n", currentBlob)
 			} else {
 				keymap, _ := parseJSONtoMap(currentBlob)
-				record := make([]string, len(headers))
+				record := make([]string, len(jsonkeys))
 				tmpExtra := ""
 				for k, v := range keymap {
 					record, tmpExtra = buildDeepRecordJSON("", k, v, headers, record, tmpExtra)
 				}
-				if !arguments["fullparse"].(bool) {
-					extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
-					if extraIndex != -1 {
-						record[extraIndex] += tmpExtra
-					}
+				extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
+				if extraIndex != -1 {
+					record[extraIndex] += tmpExtra
 				}
-				if len(record) >= len(headers) {
-					trimmedRecord := record[:len(headers)-len(geoFields)]
-					records = append(records, trimmedRecord)
-				} else {
-					records = append(records, record)
-				}
+				/*				if len(record) >= len(headers) {
+									trimmedRecord := record[:len(headers)-len(geoFields)]
+									records = append(records, trimmedRecord)
+								} else {
+									records = append(records, record)
+								}*/
+				records = append(records, record)
 				if len(records) >= lineBatchSize {
 					if jobTracker.GetJobs() >= maxRoutinesPerFile {
 					waitForOthers:
@@ -322,8 +321,17 @@ func parseDeepJSONKeys(startingKey string, k string, v any, headers []string) []
 		for i, vvv := range vv {
 			_, ok := vvv.(map[string]interface{})
 			if ok {
+				if k == "requestParameters" {
+					fmt.Println("OK")
+				}
 				headers = parseDeepJSONKeys(k, i, vvv, headers)
-			} else {
+			}
+			_, ok2 := vvv.(map[string]any)
+			if ok2 {
+				headers = parseDeepJSONKeys(k, i, vvv, headers)
+			}
+			if !ok && !ok2 {
+				i = fmt.Sprintf("%v_%v", k, i)
 				if findTargetIndexInSlice(headers, i) == -1 {
 					headers = append(headers, i)
 				}
@@ -380,14 +388,21 @@ func buildDeepRecordJSON(startingKey string, k string, v any, headers []string, 
 			_, ok := uu.(map[string]interface{})
 			if ok {
 				record, tmpExtra = buildDeepRecordJSON(k, kk, uu, headers, record, tmpExtra)
-			} else {
-				headerIndex := findTargetIndexInSlice(headers, kk)
+			}
+			_, ok2 := uu.(map[string]any)
+			if ok2 {
+				record, tmpExtra = buildDeepRecordJSON(k, kk, uu, headers, record, tmpExtra)
+			}
+			if !ok && !ok2 {
+				i := fmt.Sprintf("%v_%v", k, kk)
+				headerIndex := findTargetIndexInSlice(headers, i)
 				if headerIndex == -1 {
-					tmpExtra += fmt.Sprintf("%v:%v, ", kk, uu)
+					tmpExtra += fmt.Sprintf("%v:%v, ", i, uu)
 				} else {
 					record[headerIndex] = fmt.Sprint(uu)
 				}
 			}
+
 		}
 	default:
 		tmpExtra += fmt.Sprintf("%v:%v, ", k, v)
