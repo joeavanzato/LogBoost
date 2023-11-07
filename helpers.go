@@ -427,6 +427,23 @@ func scannerFromFile(reader io.Reader) (*bufio.Scanner, error) {
 	return scanner, nil
 }
 
+func bufferFromFile(inputfile *os.File) (*bufio.Reader, error) {
+	var reader *bufio.Reader
+	reader = bufio.NewReader(inputfile)
+	testBytes, err := reader.Peek(2)
+	if err != nil {
+		return nil, err
+	}
+	if testBytes[0] == 31 && testBytes[1] == 139 {
+		gr, err := gzip.NewReader(reader)
+		if err != nil {
+			return nil, err
+		}
+		reader = bufio.NewReader(gr)
+	}
+	return reader, nil
+}
+
 func copyFile(src, dst string) error {
 	sourceFileStat, err := os.Stat(src)
 	if err != nil {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -30,7 +29,13 @@ func checkMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (boo
 	limit := make([]string, 0)
 	limitMax := 20
 	size := 0
-	r := bufio.NewReader(f)
+	//r := bufio.NewReader(f)
+	r, rerr := bufferFromFile(f)
+	if rerr != nil {
+		logger.Error().Msg(err.Error())
+		return false, "", rerr
+	}
+
 	for {
 		if c, sz, err := r.ReadRune(); err != nil {
 			if err == io.EOF {
@@ -63,7 +68,12 @@ func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []str
 	defer f.Close()
 	if err != nil {
 	}
-	r := bufio.NewReader(f)
+	//r := bufio.NewReader(f)
+	headers := make([]string, 0)
+	r, rerr := bufferFromFile(f)
+	if rerr != nil {
+		return headers
+	}
 	headersize := len([]rune(prefix))
 	currentSize := 0
 	//currrentToken := make([]string, 0)
@@ -71,7 +81,6 @@ func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []str
 	closeCount := 0
 	currentBlob := ""
 	skipNext := false
-	headers := make([]string, 0)
 	eventCount := 0
 	oldlen := 0
 	repeated := 0
@@ -167,7 +176,11 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 		return err
 	}
 
-	r := bufio.NewReader(inputF)
+	//r := bufio.NewReader(inputF)
+	r, rerr := bufferFromFile(inputF)
+	if rerr != nil {
+		return rerr
+	}
 
 	// For parsing the file rune by rune
 	headersize := len([]rune(prefix))
