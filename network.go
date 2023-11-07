@@ -30,7 +30,10 @@ func setupPrivateNetworks() error {
 		"10.0.0.0/8",     // RFC1918
 		"172.16.0.0/12",  // RFC1918
 		"192.168.0.0/16", // RFC1918
+		"192.0.0.0/24",   // RFC 5735
+		"192.0.2.0/24",   // RFC 5737
 		"169.254.0.0/16", // RFC3927 link-local
+		"224.0.0.0/4",    // RFC 3171
 		"::1/128",        // IPv6 loopback
 		"fe80::/10",      // IPv6 link-local
 		"fc00::/7",       // IPv6 unique local addr
@@ -82,7 +85,7 @@ func lookupIPRecords(ip string) []string {
 
 func isPrivateIP(ip net.IP, ipstring string) bool {
 	// TODO There is also ip.IsPrivate() - does that supercede the need for these checks?
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsGlobalUnicast() || ip.IsInterfaceLocalMulticast() || ip.IsMulticast() {
 		return true
 	}
 	for _, block := range privateIPBlocks {
@@ -90,9 +93,12 @@ func isPrivateIP(ip net.IP, ipstring string) bool {
 			return true
 		}
 	}
-	/*	if tenDot.Contains(ip) || sevenTwoDot.Contains(ip) || oneNineTwoDot.Contains(ip) || ipstring == "127.0.0.1" || ipstring == "::" || ipstring == "::1" || ipstring == "0.0.0.0" {
+	if ip.IsPrivate() {
 		return true
-	}*/
+	}
+	if tenDot.Contains(ip) || sevenTwoDot.Contains(ip) || oneNineTwoDot.Contains(ip) || ipstring == "127.0.0.1" || ipstring == "::" || ipstring == "::1" || ipstring == "0.0.0.0" {
+		return true
+	}
 
 	return false
 }
