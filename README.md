@@ -23,6 +23,8 @@ All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to 
     * Shallow or Deep Parsing
   * JSON per-line logging
     * Shallow or Deep Parsing
+  * Multi-Line JSON Blobs from Fixed Inputs - Handled without reading entire file into memory to support large files.
+    * AWS CloudTrail Exports
   * Generic Syslog
   * KV (key1=value1, key2="value 2") style logging
     * Shallow or Deep Parsing
