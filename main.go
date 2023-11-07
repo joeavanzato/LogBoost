@@ -302,6 +302,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			fileProcessed = true
 			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
+				fileProcessed = false
 				logger.Error().Msg(err.Error())
 			}
 		}
@@ -313,6 +314,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				fileProcessed = true
 				parseErr := parseJSON(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs, headers)
 				if parseErr != nil {
+					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
 				}
 			}
@@ -327,6 +329,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				// It is some type of valid CEF-format log file
 				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, cefFormat, *asnDB, *cityDB, *countryDB, arguments, tempArgs, cefKeys)
 				if parseErr != nil {
+					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
 				}
 			}
@@ -340,6 +343,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				fileProcessed = true
 				parseErr := parseCLF(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isCLF)
 				if parseErr != nil {
+					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
 				}
 			}
@@ -353,6 +357,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				fileProcessed = true
 				parseErr := parseSyslog(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isSyslog)
 				if parseErr != nil {
+					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
 				}
 			}
@@ -366,17 +371,18 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				fileProcessed = true
 				parseErr := parseKV(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, headers)
 				if parseErr != nil {
+					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
 				}
 			}
 		}
-
 		// Last Resort - treating as raw log, no parsing available.
 		if (getAllFiles || arguments["rawtxt"].(bool)) && !fileProcessed {
 			logger.Info().Msgf("Processing TXT: %v --> %v", inputFile, outputFile)
 			fileProcessed = true
 			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
+				fileProcessed = false
 				logger.Error().Msg(err.Error())
 			}
 		}
