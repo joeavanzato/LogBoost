@@ -1,16 +1,17 @@
-# log2geo
- 
-log2geo is a command-line utility originally designed to enrich IP addresses in CSV files with ASN, Country and City information provided by the freely available MaxMind GeoLite2 DBs.  
+# LogBoost
+
+
+LogBoost is a command-line utility originally designed to enrich IP addresses in CSV files with ASN, Country and City information provided by the freely available MaxMind GeoLite2 DBs.  
 
 While at first built to support Azure exports, it is possible to use this to enrich any type of text-based data containing an IP address with parsing support built-in for a number of file types such as IIS, W3C, ELF, CEF and CLF as well as the capability to simple parse entire lines of raw text, which makes it capable of handling any type of text-based data.
 
-In addition to parsing CSV data, log2geo can also convert a limited number of other log-formats to CSV, currently including IIS and W3C formats - generic KV log breaking is being worked on.
+In addition to parsing CSV data, LogBoost can also convert a limited number of other log-formats to CSV - this currently includesm 
 
-log2geo can also perform reverse lookups on each unique IP address detected in the source files to identify related domains.  
+LogShift can also perform reverse lookups on each unique IP address detected in the source files to identify related domains.  
 
 On top of this, it is possible to pull down text-based threat intelligence and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the 'type' provided in feed_config.json of the intel.
 
-All in - log2geo can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
+All in - LogBoost can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
 
 ### Primary Features
 * Process Structured/Semi-Structured/Unstructured data to enriched CSV
@@ -56,14 +57,14 @@ The tool will automatically download and extract the latest version of each data
 Updates to local databases can be triggered via '-updategeo' flag.
 
 ### Outputs
-The ultimate output of running log2geo against one or more input files is a CSV file which represents the original data stream but will contain an additional 7 columns as listed below:
-* l2g_IP - Represents the IP address used for enrichment tasks.
-* l2g_ASN - Represents the name of the ASN Organization associated with the IP address.
-* l2g_Country - Represents the name of the Country associated with the IP address.
-* l2g_City - Represents the name of the City associated with the IP address.
-* l2g_Domains - Represents any domain name associated with the IP address, split by '|' if there are multiple.
-* l2g_ThreatCategory - Represents the threat category associated with the IP address - will be a single string such as 'tor', 'proxy', etc or 'none' if it is not found in the database.
-* l2g_TLD - Represents the Top Level Domain associated with the IP address - only populated if 'GeoIP2-Domain.mmdb' is found in the specified MaxMind DB directory (CWD by default).
+The ultimate output of running LogBoost against one or more input files is a CSV file which represents the original data stream but will contain an additional 7 columns as listed below:
+* lb_IP - Represents the IP address used for enrichment tasks.
+* lb_ASN - Represents the name of the ASN Organization associated with the IP address.
+* lb_Country - Represents the name of the Country associated with the IP address.
+* lb_City - Represents the name of the City associated with the IP address.
+* lb_Domains - Represents any domain name associated with the IP address, split by '|' if there are multiple.
+* lb_ThreatCategory - Represents the threat category associated with the IP address - will be a single string such as 'tor', 'proxy', etc or 'none' if it is not found in the database.
+* lb_TLD - Represents the Top Level Domain associated with the IP address - only populated if 'GeoIP2-Domain.mmdb' is found in the specified MaxMind DB directory (CWD by default).
 
 ### Commandline Arguments
 ```
@@ -80,7 +81,7 @@ The ultimate output of running log2geo against one or more input files is a CSV 
 
 -regex [bool] (default=false) - Scan each line for first IP address matche via regex rather than specifying a specific column name.
 
--convert [bool] (default=false) - Tells log2geo to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
+-convert [bool] (default=false) - Tells LogBoost to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
   - IIS - Looks for #Fields and comma-delimited values
   - W3C - Looks for #Fields and space-delimited values
   - KV - [TODO] Looks for KV-style logging based on provided -delimiter and -separator values
@@ -90,7 +91,7 @@ The ultimate output of running log2geo against one or more input files is a CSV 
 -separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the separator would be '='
 -delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the delimiter would be ','
 
--dns [bool] (default=false) - Tell log2geo to perform reverse-lookups on detected IP addresses to find currently associated domains.
+-dns [bool] (default=false) - Tell LogBoost to perform reverse-lookups on detected IP addresses to find currently associated domains.
  
 -maxgoperfile [int] (default=20) - Limit number of goroutines spawned per file for concurrent chunk processing
 -batchsize [int] (default=500) - Limit how many lines per-file are sent to each spawned goroutine
@@ -116,23 +117,23 @@ The ultimate output of running log2geo against one or more input files is a CSV 
 
 ### Example Usage
 ```
-log2geo.exe -logdir logs -api XXX
-log2geo.exe -logdir input -jsoncol data -ipcol client -fullparse : Parse CSVs located in 'input' and look for JSON data within a column named data to expand - also look for a column named 'client' to use for detecting an IP address
-log2geo.exe -logdir input -jsoncol data -fullparse -regex : Expand JSON column named 'data' and regex entire line of data for an IP address to enrich
-log2geo.exe -buildti : Initialize/build the indicator database - should only be required once to build threats.db
-log2geo.exe -updateti : Use to download and ingest indicator feed updates
-log2geo.exe -logdir C:\logs -dns -useti -ipcol ipaddress : Parse the logs present in C:\logs and, use DNS to lookup domains on detected IPs and also use the indicator database - look for IPs in column named 'ipaddress'
-log2geo.exe -logdir logs -dns -maxgoperfile 40 -batchsize 100 -writebuffer 2000 : Process each file with up to 40 goroutines handling 100 lines per routine and buffering 2000 records before writing to disk - also enrich detected IP addresses with DNS lookups
-log2geo.exe -logdir C:\azureadlogs -outputdir enriched_logs : Look for all CSVs in directory 'C:\azureadlogs', output logs to 'enriched_logs' and use defaults for IP/JSON columns that may contain IP addresses (Azure Log Exports)
-log2geo.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory 'somelogs' and subsequently enrich based on column-named 'IPADDRESS'
-log2geo.exe -logdir logs -convert : log2geo will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
-log2geo.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
-log2geo.exe -logdir logs -updateti -useti -batchsize 1000 -maxgoperfile 40 -concurrentfiles 5000 -regex  -combine : Update and use threat intelligence to process CSVs from "logs" dir using the specified concurrency settings, combining final outputs and using regex to find the appropriate IP address to enrich on a line-by-line basis.
-log2geo.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -dateformat 2006-01-02 -convert -enddate 01/04/2023 : Parse and Convert IIS logs with a date record between 1/1/23 and 1/4/23 (inclusive)
+LogBoost.exe -logdir logs -api XXX
+LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse : Parse CSVs located in 'input' and look for JSON data within a column named data to expand - also look for a column named 'client' to use for detecting an IP address
+LogBoost.exe -logdir input -jsoncol data -fullparse -regex : Expand JSON column named 'data' and regex entire line of data for an IP address to enrich
+LogBoost.exe -buildti : Initialize/build the indicator database - should only be required once to build threats.db
+LogBoost.exe -updateti : Use to download and ingest indicator feed updates
+LogBoost.exe -logdir C:\logs -dns -useti -ipcol ipaddress : Parse the logs present in C:\logs and, use DNS to lookup domains on detected IPs and also use the indicator database - look for IPs in column named 'ipaddress'
+LogBoost.exe -logdir logs -dns -maxgoperfile 40 -batchsize 100 -writebuffer 2000 : Process each file with up to 40 goroutines handling 100 lines per routine and buffering 2000 records before writing to disk - also enrich detected IP addresses with DNS lookups
+LogBoost.exe -logdir C:\azureadlogs -outputdir enriched_logs : Look for all CSVs in directory 'C:\azureadlogs', output logs to 'enriched_logs' and use defaults for IP/JSON columns that may contain IP addresses (Azure Log Exports)
+LogBoost.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory 'somelogs' and subsequently enrich based on column-named 'IPADDRESS'
+LogBoost.exe -logdir logs -convert : LogBoost will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
+LogBoost.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
+LogBoost.exe -logdir logs -updateti -useti -batchsize 1000 -maxgoperfile 40 -concurrentfiles 5000 -regex  -combine : Update and use threat intelligence to process CSVs from "logs" dir using the specified concurrency settings, combining final outputs and using regex to find the appropriate IP address to enrich on a line-by-line basis.
+LogBoost.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -dateformat 2006-01-02 -convert -enddate 01/04/2023 : Parse and Convert IIS logs with a date record between 1/1/23 and 1/4/23 (inclusive)
 ```
 
 ### Threat Intelligence Notes
-log2geo is capable of downloading and normalizing configurable text-based threat indicator feeds to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
+LogBoost is capable of downloading and normalizing configurable text-based threat indicator feeds to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
 
 Over 90 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to download fresh copies of intelligence and ingest it into the existing databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
 
@@ -146,7 +147,7 @@ Adding custom text-based files to the underlying database can be achieved using 
 * Maybe: Export inline to parquet instead of CSV
 
 ### Performance Considerations
-log2geo is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, it is possible to spawn 10,000 individual goroutines depending on the -concurrentfiles setting.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
+LogBoost is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, it is possible to spawn 10,000 individual goroutines depending on the -concurrentfiles setting.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
 
 Realistically, this should not cause any issues on most modern machines - a machine with 4 GB of RAM is capable of easily handling ~1,000,000 goroutines - but now we have to take into account the files we are processing - this is where batchsize becomes important.  We must select a batchsize that is appropriate to both the data we are treating as well as the machine we are operating on - the defaults are typically good starting points to ensure work is processed efficiently but should be played with if performance is poor.
 
@@ -155,7 +156,7 @@ Additionally, the -concurrentfiles flag can be used to limit the number of files
 On top of this - as lines are sent to the main writer for each output file, they are buffered into a slice before writing to file to help improve throughput - the amount of lines buffered at a time for each output file can be controlled via the -writebuffer parameter - defaulting to 1000.
 
 ### DNS Notes
-log2geo is capable of generating an enormous amount of DNS queries depending on the input data - when an execution is started, an in-memory cache is established to hold DNS record responses for each detected IP address - this helps reduce redundant DNS requests for the same IP address, improving overall throughput.
+LogBoost is capable of generating an enormous amount of DNS queries depending on the input data - when an execution is started, an in-memory cache is established to hold DNS record responses for each detected IP address - this helps reduce redundant DNS requests for the same IP address, improving overall throughput.
 
 Still, be aware that '-dns' can have a large impact on the overall execution time when dealing with a large amount of IP addresses - it may make sense to reduce overall batch size and increase maxgoperfile to help split DNS requests across more go routines.
 
@@ -166,34 +167,34 @@ To help mitigate this, DNS results are cached for re-use - when execution is com
 
 #### CSV
 Handling CSV input is straight forward:
-1. Point log2geo at the logs via '-logdir'
-2. Either tell log2geo which column contains an IP address with '-ipcol' or use '-regex' to have it scan each line for the first non-private IP address
+1. Point LogBoost at the logs via '-logdir'
+2. Either tell LogBoost which column contains an IP address with '-ipcol' or use '-regex' to have it scan each line for the first non-private IP address
 3. That's it - you can use additional settings if desired such as '-dns', '-useti' or the date filtering flags but this is enough for basic processing of standard CSVs.
 ```
-log2geo.exe -logdir C:\csvfiles
+LogBoost.exe -logdir C:\csvfiles
 ```
 If we are processing a directory that contains time-delimited files, it may be useful to also include '-combine' to push similar files together in each output directory.
 ```
-log2geo.exe -logdir C:\csvfiles -combine
+LogBoost.exe -logdir C:\csvfiles -combine
 ```
 To expand an embedded JSON blob, use '-jsoncol' and provide the column name - by default, 'AuditData' is used to help with Azure Audit Exports.  Also use fullparse to enable this functionality.
 ```
-log2geo.exe -logdir C:\csvwithjson -jsoncol "jsondata" -fullparse
+LogBoost.exe -logdir C:\csvwithjson -jsoncol "jsondata" -fullparse
 ```
 
 #### IIS/W3C/ELF/CLF (Web Server Style Logging)
-1. Tell log2geo where to find the logs via '-logdir'
+1. Tell LogBoost where to find the logs via '-logdir'
 2. Include the '-convert' flag so we find files besides .csv
 3. At the core - that is all that is required - if you are processing directories that contain similar files, it may also be useful to include '-combine' to combine the outputs.
 4. Optional flags such as -dns, -useti and the date filtering can also be used if desired.
 ```
-log2geo.exe -logdir C:\inetpub\logs -convert -combine
+LogBoost.exe -logdir C:\inetpub\logs -convert -combine
 ```
 
 #### Common Event Format (CEF)
 Handling is similar to above - since these are typically not CSV files, we need to use '-convert' flag to find/parse them.
 
-log2geo is currently capable of detecting/parsing 4 types of CEF input, with line samples provided below:
+LogBoost is currently capable of detecting/parsing 4 types of CEF input, with line samples provided below:
 * CEF with syslog RFC 3164 Header
   * <6>Sep 14 14:12:51 10.1.1.143 CEF:0|.....
 * CEF with syslog RFC 5424 Header
@@ -203,33 +204,33 @@ log2geo is currently capable of detecting/parsing 4 types of CEF input, with lin
 * CEF without any prefixes/headers
   * CEF:0|.....
 
-Additionally, log2geo is capable of parsing out all possible K=V extensions in a given file and using these as column headers, in effect 'flattening' the CEF extensions for easier filtering.  This can be enabled via the '-fullparse' flag - this will increase processing time as we need to read the file twice - once to gather all possible headers and again to actually parse it.
+Additionally, LogBoost is capable of parsing out all possible K=V extensions in a given file and using these as column headers, in effect 'flattening' the CEF extensions for easier filtering.  This can be enabled via the '-fullparse' flag - this will increase processing time as we need to read the file twice - once to gather all possible headers and again to actually parse it.
 
 #### JSON
-log2geo is capable of performing either shallow or deep parsing of per-line JSON message logging such as below:
+LogBoost is capable of performing either shallow or deep parsing of per-line JSON message logging such as below:
 ```
 {"type":"liberty_accesslog","host":"79e8ad2347b3","ibm_userDir":"\/opt\/ibm\/wlp\/usr\/","ibm_serverName":"defaultServer","ibm_remoteHost":"172.27.0.10","ibm_requestProtocol":"HTTP\/1.1","ibm_userAgent":"Apache-CXF/3.3.3-SNAPSHOT","ibm_requestHeader_headername":"header_value","ibm_requestMethod":"GET","ibm_responseHeader_connection":"Close","ibm_requestPort":"9080","ibm_requestFirstLine":"GET \/favicon.ico HTTP\/1.1","ibm_responseCode":200,"ibm_requestStartTime":"2020-07-14T13:28:19.887-0400","ibm_remoteUserID":"user","ibm_uriPath":"\/favicon.ico","ibm_elapsedTime":834,"ibm_accessLogDatetime":"2020-07-14T13:28:19.887-0400","ibm_remoteIP":"172.27.0.9","ibm_requestHost":"172.27.0.9","ibm_bytesSent":15086,"ibm_bytesReceived":15086,"ibm_cookie_cookiename":"cookie_value","ibm_requestElapsedTime":3034,"ibm_datetime":"2020-07-14T13:28:19.887-0400","ibm_sequence":"1594747699884_0000000000001"}
 {"type":"liberty_accesslog","host":"79e8ad2347b3","ibm_userDir":"\/opt\/ibm\/wlp\/usr\/","ibm_serverName":"defaultServer","ibm_remoteHost":"172.27.0.10","ibm_requestProtocol":"HTTP\/1.1","ibm_userAgent":"Apache-CXF/3.3.3-SNAPSHOT","ibm_requestHeader_headername":"header_value","ibm_requestMethod":"GET","ibm_responseHeader_connection":"Close","ibm_requestPort":"9080","ibm_requestFirstLine":"GET \/favicon.ico HTTP\/1.1","ibm_responseCode":200,"ibm_requestStartTime":"2020-07-14T13:28:19.887-0400","ibm_remoteUserID":"user","ibm_uriPath":"\/favicon.ico","ibm_elapsedTime":834,"ibm_accessLogDatetime":"2020-07-14T13:28:19.887-0400","ibm_remoteIP":"172.27.0.9","ibm_requestHost":"172.27.0.9","ibm_bytesSent":15086,"ibm_bytesReceived":15086,"ibm_cookie_cookiename":"cookie_value","ibm_requestElapsedTime":3034,"ibm_datetime":"2020-07-14T13:28:19.887-0400","ibm_sequence":"1594747699884_0000000000001"}
 ```
 A 'shallow' parse is reading one line from the file and using only the keys present in that line as columns - any extra keys will be stored in a column named 'EXTRA_KEYS' as a raw string when parsing.
 ```
-log2geo.exe -logdir C:\jsonlogs -convert
+LogBoost.exe -logdir C:\jsonlogs -convert
 ```
 To 'deep' parse a file means to read the entire thing once to gather all possible keys then to read again to actually parse and assign values based on detected keys.  To enable this, add -fullparse as below:
 ```
-log2geo.exe -logdir C:\jsonlogs -convert -fullparse
+LogBoost.exe -logdir C:\jsonlogs -convert -fullparse
 ```
 
 
 #### KV Messages
-log2geo is (mostly) capable of handling standard KV-style log formats - the default delimiter is '=' and the default kv separator is ',' - for example, to parse a file containing lines such as:
+LogBoost is (mostly) capable of handling standard KV-style log formats - the default delimiter is '=' and the default kv separator is ',' - for example, to parse a file containing lines such as:
 ```
 timestamp="Jun 12 2023 00:00:00.000", source=host1, message="test message", ip=1.1.1.1
 timestamp="Jun 12 2023 00:00:00.000", source=host1, message="test message", ip=1.1.1.1 
 ```
 Just use the below commandline:
 ```
-log2geo.exe -logdir C:\kvlogs -convert
+LogBoost.exe -logdir C:\kvlogs -convert
 ```
 Since this file uses standard separator/delimiter, nothing special is required.  If instead the file looked like this:
 ```
@@ -238,13 +239,13 @@ timestamp:"Jun 12 2023 00:00:00.000"| source:host1| message:"test message"| ip:1
 ```
 Then alter your command like below:
 ```
-log2geo.exe -logdir C:\kvlogs -convert -separator "|" -delimiter ":"
+LogBoost.exe -logdir C:\kvlogs -convert -separator "|" -delimiter ":"
 ```
 
 #### Generic Syslog
-Nothing special required here - similar to IIS/CEF/etc, just specify your log directory and use '-convert' - but since syslog and similar files normally do not have an extension, make sure to also use '-getall' - this flag makes log2geo try to process any type of file in the log directory, not just .csv, .txt or .log.
+Nothing special required here - similar to IIS/CEF/etc, just specify your log directory and use '-convert' - but since syslog and similar files normally do not have an extension, make sure to also use '-getall' - this flag makes LogBoost try to process any type of file in the log directory, not just .csv, .txt or .log.
 
-By defaut, log2geo can parse generic syslog, RFC5424 and RFC3164, with examples of each provided below.
+By defaut, LogBoost can parse generic syslog, RFC5424 and RFC3164, with examples of each provided below.
 * Generic
   * Jun 27 18:19:37 ip-172-31-82-74 systemd[1]: MESSAGE
   * Jun 27 18:17:39 ip-172-31-82-74 sudo: MESSAGE
@@ -254,12 +255,12 @@ By defaut, log2geo can parse generic syslog, RFC5424 and RFC3164, with examples 
   * <6>Sep 14 14:12:51 10.1.1.143 MESSAGE
 
 #### Any other Text-based files
-While log2geo may not have parsers for every type of log or file-type - it can still help analysts quickly enrich any file type by using regex to find the first non-private IP address in each line of a file and enriching appropriately.
+While LogBoost may not have parsers for every type of log or file-type - it can still help analysts quickly enrich any file type by using regex to find the first non-private IP address in each line of a file and enriching appropriately.
 
 ```
-log2geo.exe -logdir C:\somelogs -convert -rawtxt
+LogBoost.exe -logdir C:\somelogs -convert -rawtxt
 ```
-Each line of the input file will be included in it's entirety in the first column of the resulting CSV with additional columns added for the log2geo enrichments.
+Each line of the input file will be included in it's entirety in the first column of the resulting CSV with additional columns added for the LogBoost enrichments.
 
 To analyze all files in a directory regardless of extension, use '-getall' - the use of '-convert' will only pick up .txt/.log files by default without this.
 
