@@ -513,43 +513,54 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 	ipString := ""
 	var exists bool
+	noIP := []string{"NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP"}
+	pvtIP := []string{"PVT", "PVT", "PVT", "PVT", "PVT", "PVT"}
+	NAIP := []string{"NA", "NA", "NA", "NA", "NA", "NA", "NA"}
 	if ipAddressColumn != -1 {
 		//ip = net.ParseIP(record[ipAddressColumn])
 		ipString = record[ipAddressColumn]
 		if net.ParseIP(ipString) == nil {
 			ipString, exists = regexFirstPublicIPFromString(record[ipAddressColumn])
 			if !exists {
-				record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+				record = append(record, noIP...)
 				return record
 			}
 		}
 	} else if jsonColumn != -1 {
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString = findClientIP(logger, record[jsonColumn])
+		if ipString == "" {
+			ipString, exists = regexFirstPublicIPFromString(strings.Join(record, " "))
+			if !exists {
+				record = append(record, noIP...)
+				return record
+			}
+		}
 	} else if useRegex {
 		//ip = findClientIP(logger, record[jsonColumn])
 		ipString, exists = regexFirstPublicIPFromString(strings.Join(record, " "))
 		if !exists {
-			record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+			record = append(record, noIP...)
 			return record
 		}
 	} else {
 		// Could not identify which a column storing IP address column or JSON blob and not using regex to find an IP
-		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA")
+		record = append(record, NAIP...)
 		return record
 	}
 
 	if ipString == "" {
-		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA")
+		record = append(record, NAIP...)
 		return record
 	}
 	ip := net.ParseIP(ipString)
 	if ip == nil {
-		record = append(record, "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP")
+		record = append(record, noIP...)
 		return record
 	}
 	if isPrivateIP(ip, ipString) {
-		record = append(record, ipString, "PVT", "PVT", "PVT", "PVT", "PVT", "PVT")
+		record = append(record, ipString)
+		record = append(record, pvtIP...)
 		return record
 	}
 	/*	if useDNS {
