@@ -1,17 +1,52 @@
 # LogBoost
 
 
+### What is it?
+
 LogBoost is a command-line utility originally designed to enrich IP addresses in CSV files with ASN, Country and City information provided by the freely available MaxMind GeoLite2 DBs.  
 
-While at first built to support Azure exports, it is possible to use this to enrich any type of text-based data containing an IP address with parsing support built-in for a number of file types such as IIS, W3C, ELF, CEF and CLF as well as the capability to simple parse entire lines of raw text, which makes it capable of handling any type of text-based data.
+LogBoost can also parse and convert a variety of structured and semi-structured log formats to CSV while simultaneously enriching detected IP addresses, including JSON, IIS, W3C, ELF, CLF, CEF, KV, SYSLOG.
 
-In addition to parsing CSV data, LogBoost can also convert a limited number of other log-formats to CSV - this currently includesm 
+The tool can also perform reverse lookups on each IP address detected in the source files to identify currently related domains.  If 'GeoLite2-Domain.mmdb' is detected in the specified MaxMind DB Dir (CWD by default), the associated TLD of the enriched IP address is provided in the output as well.
 
-LogShift can also perform reverse lookups on each unique IP address detected in the source files to identify related domains.  
+On top of this, LogBoost can download text-based threat intelligence as configured in feed_config.json and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the indicator 'type'.
 
-On top of this, it is possible to pull down text-based threat intelligence and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the 'type' provided in feed_config.json of the intel.
+All in - LogBoost can convert a variety of log formats to CSV while enriching IP addresses with Country, ASN, City, Domains and Indicator Information.
 
-All in - LogBoost can add Country, City, ASN, ThreatCategory and live Domains to structured data (CSV/IIS/W3C) as well as unstructured data (raw logs, syslog, etc) using regex or known column names.
+### Common Usecases
+* Enriching and combining a log directory containing thousands of similarly-structured files (WebServer logs, Cloudtrail dumps, Firewall exports, etc)
+* Converting JSON Lines/Multi-line JSON blobs into more easily filterable CSVs 
+* Parsing KV-pair logging, such as Firewall dumps (k1=v1,k2=v2, etc)
+* Parsing CEF-style logging, from Syslog or otherwise, into CSV
+* Finding suspicious IP addresses in any inspected file through threat indicator matching
+* Enriching IP addresses to find associated domain names and geo-locations in any inspected file
+
+### Example Outputs
+<h4 align="center">Enriching Azure Audit Log Export</h4>
+<p align="center">
+<img src="images/azure_audit_enrich.png">
+</p>
+<h4 align="center">Enriching and Expanding Azure Audit Log Export</h4>
+<p align="center">
+<img src="images/azure_audit_enrich_expand.png">
+</p>
+<h4 align="center">Enriching IPs with DNS (Live and MaxMind TLD if available)</h4>
+<p align="center">
+<img src="images/azure_audit_enrich_dns.png">
+</p>
+<h4 align="center">Enriching logs with built-in threat indicators</h4>
+<p align="center">
+<img src="images/azure_audit_enrich_ti.png">
+</p>
+<h4 align="center">Convert Common/Combined Log Format to CSV while enriching source IP address</h4>
+<p align="center">
+<img src="images/convert_CLF_logs.png">
+</p>
+<h4 align="center">Converting JSON Lines using Shallow or Deep Key parsing</h4>
+<p align="center">
+<img src="images/json_line_logging.png">
+</p>
+
 
 ### Primary Features
 * Process Structured/Semi-Structured/Unstructured data to enriched CSV
@@ -90,6 +125,8 @@ The ultimate output of running LogBoost against one or more input files is a CSV
  
 -separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the separator would be '='
 -delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the delimiter would be ','
+
+-passthrough [bool] (default=false) - If specified, will skip any enrichment tasks and just convert input to CSV.
 
 -dns [bool] (default=false) - Tell LogBoost to perform reverse-lookups on detected IP addresses to find currently associated domains.
  
