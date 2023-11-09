@@ -55,6 +55,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	summarizeti := flag.Bool("summarizeti", false, "Summarize the contents of the ThreatDB, if it exists.")
 	fullparse := flag.Bool("fullparse", false, "If specified, will scan entire files for all possible keys to use in CSV rather than generalizing messages into an entire column - increases processing time.  Use to expand JSON blobs inside columnar data with -jsoncol to provide the name of the column.")
 	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
+	passthrough := flag.Bool("passthrough", false, "Skip all enrichment steps - only perform log conversion to CSV")
 
 	flag.Parse()
 
@@ -92,6 +93,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"summarizeti":     *summarizeti,
 		"fullparse":       *fullparse,
 		"updategeo":       *updategeo,
+		"passthrough":     *passthrough,
 	}
 
 	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {
@@ -199,6 +201,8 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	} else {
 		tempArgs["enddate"] = ""
 	}
+
+	tempArgs["passthrough"] = arguments["passthrough"].(bool)
 	//startDate, endDate := getDateBounds(tempArgs)
 
 	// TODO - Check for DomainDB and add to TempArgs as a temporary measure - if this exists, we will use it instead of live DNS lookup
@@ -264,39 +268,48 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	defer t.SubJob()
 	defer waitGroup.Done()
 
+	//var DBRefs DBRefs
+
 	asnDB, err := maxminddb.Open(maxMindFileLocations["ASN"])
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return
 	}
 	defer asnDB.Close()
+	//DBRefs.ASN = asnDB
 	cityDB, err := maxminddb.Open(maxMindFileLocations["City"])
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return
 	}
 	defer cityDB.Close()
+	//DBRefs.City = cityDB
 	countryDB, err := maxminddb.Open(maxMindFileLocations["Country"])
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return
 	}
 	defer countryDB.Close()
+	var domainDB *maxminddb.Reader
+	//DBRefs.Country = countryDB
 	if maxMindStatus["Domain"] {
-		domainDB, err := maxminddb.Open(maxMindFileLocations["Domain"])
+		domainDB, err = maxminddb.Open(maxMindFileLocations["Domain"])
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return
 		}
 		defer domainDB.Close()
-		tempArgs["domaindb"] = domainDB
+		//DBRefs.Domain = domainDB
+	} else {
+		domainDB = new(maxminddb.Reader)
+		//DBRefs.Domain = nil
 	}
 
 	fileProcessed := false
 	if strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
 		logger.Info().Msgf("Processing CSV: %v --> %v", inputFile, outputFile)
 		fileProcessed = true
-		processCSV(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
+		processCSV(logger, *asnDB, *cityDB, *countryDB, *domainDB, arguments, inputFile, outputFile, tempArgs)
 	} else if arguments["convert"].(bool) || getAllFiles {
 		// TODO - Parse KV style logs based on provided separator and delimiter if we are set to convert log files
 		//
@@ -310,23 +323,10 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if isIISorW3c {
 			logger.Info().Msgf("Processing IIS/W3C: %v --> %v", inputFile, outputFile)
 			fileProcessed = true
-			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
+			err := parseIISStyle(logger, *asnDB, *cityDB, *countryDB, *domainDB, fields, delim, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
 				fileProcessed = false
 				logger.Error().Msg(err.Error())
-			}
-		}
-		// JSON-based per-line logging Check
-		if !fileProcessed {
-			isJSON, headers, _ := checkJSON(logger, inputFile, arguments["fullparse"].(bool))
-			if isJSON {
-				logger.Info().Msgf("Processing JSON: %v --> %v", inputFile, outputFile)
-				fileProcessed = true
-				parseErr := parseJSON(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs, headers)
-				if parseErr != nil {
-					fileProcessed = false
-					logger.Error().Msg(parseErr.Error())
-				}
 			}
 		}
 
@@ -343,13 +343,27 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 					fileProcessed = false
 				}
 				if !someError {
-					parseErr := parseMultiLineJSON(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs, headers, prefix)
+					parseErr := parseMultiLineJSON(logger, *asnDB, *cityDB, *countryDB, *domainDB, arguments, inputFile, outputFile, tempArgs, headers, prefix)
 					if parseErr != nil {
 						fileProcessed = false
 						logger.Error().Msg(parseErr.Error())
 					}
 				}
 
+			}
+		}
+
+		// JSON-based per-line logging Check
+		if !fileProcessed {
+			isJSON, headers, _ := checkJSON(logger, inputFile, arguments["fullparse"].(bool))
+			if isJSON {
+				logger.Info().Msgf("Processing JSON: %v --> %v", inputFile, outputFile)
+				fileProcessed = true
+				parseErr := parseJSON(logger, *asnDB, *cityDB, *countryDB, *domainDB, arguments, inputFile, outputFile, tempArgs, headers)
+				if parseErr != nil {
+					fileProcessed = false
+					logger.Error().Msg(parseErr.Error())
+				}
 			}
 		}
 
@@ -360,7 +374,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 				logger.Info().Msgf("Processing CEF: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
 				// It is some type of valid CEF-format log file
-				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, cefFormat, *asnDB, *cityDB, *countryDB, arguments, tempArgs, cefKeys)
+				parseErr := parseCEF(logger, inputFile, outputFile, arguments["fullparse"].(bool), headers, cefFormat, *asnDB, *cityDB, *countryDB, *domainDB, arguments, tempArgs, cefKeys)
 				if parseErr != nil {
 					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
@@ -374,7 +388,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			if isCLF != -1 {
 				logger.Info().Msgf("Processing CLF: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
-				parseErr := parseCLF(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isCLF)
+				parseErr := parseCLF(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, *domainDB, arguments, tempArgs, isCLF)
 				if parseErr != nil {
 					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
@@ -388,7 +402,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			if isSyslog != -1 {
 				logger.Info().Msgf("Processing SYSLOG: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
-				parseErr := parseSyslog(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, isSyslog)
+				parseErr := parseSyslog(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, *domainDB, arguments, tempArgs, isSyslog)
 				if parseErr != nil {
 					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
@@ -402,7 +416,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 			if isKV {
 				logger.Info().Msgf("Processing KV: %v --> %v", inputFile, outputFile)
 				fileProcessed = true
-				parseErr := parseKV(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, arguments, tempArgs, headers)
+				parseErr := parseKV(logger, inputFile, outputFile, *asnDB, *cityDB, *countryDB, *domainDB, arguments, tempArgs, headers)
 				if parseErr != nil {
 					fileProcessed = false
 					logger.Error().Msg(parseErr.Error())
@@ -413,7 +427,7 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 		if (getAllFiles || arguments["rawtxt"].(bool)) && !fileProcessed {
 			logger.Info().Msgf("Processing TXT: %v --> %v", inputFile, outputFile)
 			fileProcessed = true
-			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, arguments, inputFile, outputFile, tempArgs)
+			err := parseRaw(logger, *asnDB, *cityDB, *countryDB, *domainDB, arguments, inputFile, outputFile, tempArgs)
 			if err != nil {
 				fileProcessed = false
 				logger.Error().Msg(err.Error())
@@ -466,7 +480,7 @@ func listenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger,
 	}
 }
 
-func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any, dateindex int) {
+func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, channel chan []string, waitGroup *WaitGroupCount, tracker *runningJobs, tempArgs map[string]any, dateindex int) {
 	defer waitGroup.Done()
 	defer tracker.SubJob()
 
@@ -484,7 +498,10 @@ func processRecords(logger zerolog.Logger, records [][]string, asnDB maxminddb.R
 				}
 			}
 		}
-		record = enrichRecord(logger, record, asnDB, cityDB, countryDB, ipAddressColumn, jsonColumn, useRegex, useDNS, tempArgs)
+		if !tempArgs["passthrough"].(bool) {
+			// If passthrough == false, we enrich, otherwise just convert to CSV
+			record = enrichRecord(logger, record, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, useRegex, useDNS, tempArgs)
+		}
 		channel <- record
 	}
 }
@@ -508,7 +525,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//return net.ParseIP(results["ClientIP"])
 }
 
-func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, tempArgs map[string]any) []string {
+func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, tempArgs map[string]any) []string {
 	// Columns this function should append to input record (in order): ASN, Country, City, Domains, TOR, SUSPICIOUS, PROXY
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
 	ipString := ""
@@ -667,7 +684,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	}*/
 	if maxMindStatus["Domain"] {
 		tmpDomain := Domain{}
-		err := tempArgs["domaindb"].(*maxminddb.Reader).Lookup(ip, &tmpDomain)
+		err := domainDB.Lookup(ip, &tmpDomain)
 		if err != nil {
 			record = append(record, "NA")
 		} else {
@@ -678,18 +695,6 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	}
 
 	return record
-}
-
-func getCSVHeaders(csvFile string) ([]string, error) {
-	inputHeaderFile, err := openInput(csvFile)
-	reader := csv.NewReader(inputHeaderFile)
-	defer inputHeaderFile.Close()
-	headers, err := reader.Read()
-	if err != nil {
-		return make([]string, 0), err
-	}
-	return headers, nil
-
 }
 
 func main() {
@@ -754,6 +759,10 @@ func main() {
 			return
 		}
 		useIntel = true
+	}
+
+	if arguments["passthrough"].(bool) {
+		logger.Info().Msg("Passthrough Mode Enabled - Skipping all enrichments!")
 	}
 
 	//makeTorList(arguments, logger)
