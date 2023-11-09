@@ -78,13 +78,14 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
     * Shallow or Deep Parsing
   * JSON per-line logging
     * Shallow or Deep Parsing
-  * Multi-Line JSON Blobs from Fixed Inputs - Handled without reading entire file into memory to support large files.
+  * Multi-Line JSON Blobs from Fixed Inputs
     * AWS CloudTrail Exports
   * Generic Syslog
   * KV (key1=value1, key2="value 2") style logging
     * Shallow or Deep Parsing
   * Raw Text Files
-* Read plain-text files or GZ archives transparently
+* Read plain-text files or GZ archives transparently for all parser types
+* Handles files 'line by line' to avoid reading entire file into memory
 * Expand JSON blobs embedded within CSV to individual columns
 * Filtering outputs on specific datetime ranges
 * Enriching detected IP with MaxMind Geo/ASN Information
