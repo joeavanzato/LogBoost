@@ -1,4 +1,4 @@
-module github.com/joeavanzato/log2geo
+module github.com/joeavanzato/logboost
 
 go 1.20
 
