@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
+func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
@@ -58,7 +58,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			records = nil
 			break
 		}
@@ -78,14 +78,14 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			}
 			records = nil
 		}
@@ -94,7 +94,7 @@ func parseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
