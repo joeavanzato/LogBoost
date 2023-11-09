@@ -5,7 +5,7 @@ import (
 	"regexp"
 )
 
-const logFile = "log2geo.log"
+const logFile = "logboost.log"
 
 var extraKeysColumnName = "EXTRA_KEYS"
 
@@ -46,7 +46,7 @@ var maxMindFileLocations = map[string]string{
 // Used in func visit to add log paths as we crawl the input directory
 var logsToProcess = make([]string, 0)
 
-var geoFields = []string{"l2g_IP", "l2g_ASN", "l2g_Country", "l2g_City", "l2g_Domains", "l2g_ThreatCategory", "l2g_TLD"}
+var geoFields = []string{"lb_IP", "lb_ASN", "lb_Country", "lb_City", "lb_Domains", "lb_ThreatCategory", "lb_TLD"}
 
 var ipv6_regex = regexp.MustCompile(`.*(?P<ip>(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))).*`)
 
