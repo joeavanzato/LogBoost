@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/oschwald/maxminddb-golang"
 	"sync"
 	"sync/atomic"
 )
@@ -39,6 +40,13 @@ type IPCache struct {
 	City      string
 	Domains   []string
 	ThreatCat string
+}
+
+type DBRefs struct {
+	Country *maxminddb.Reader
+	City    *maxminddb.Reader
+	Domain  *maxminddb.Reader
+	ASN     *maxminddb.Reader
 }
 
 // TODO - Put lock and map in single struct for organization - then refactor CheckIP and AddIP to just take the original cachemap struct
