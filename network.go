@@ -64,12 +64,13 @@ func downloadFile(logger zerolog.Logger, url string, filepath string, key string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
+		return fmt.Errorf("HTTP Status Error: %s", resp.Status)
 	}
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		return err
 	}
+	logger.Info().Msgf("Successfully Downloaded: %v", url)
 	return nil
 }
 
