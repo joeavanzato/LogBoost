@@ -70,7 +70,7 @@ func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool
 	return true, headers, nil
 }
 
-func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, kvheaders []string) error {
+func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, kvheaders []string) error {
 	// If full parse, then we will do similar to JSON/CEF dynamic insertion
 	// otherwise, we will only use columns that exist on the first line and everything else will be shoved into a string under var named extra_column - the last line of the current headers
 	// boilerplate
@@ -90,7 +90,11 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 	writer := csv.NewWriter(outputF)
 	headers := make([]string, 0)
 	headers = append(headers, kvheaders...)
-	headers = append(headers, geoFields...)
+	// TODO - Sort
+	//sort.Sort(sort.StringSlice(headers))
+	if !arguments["passthrough"].(bool) {
+		headers = append(headers, geoFields...)
+	}
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -124,7 +128,7 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			records = nil
 			break
 		}
@@ -149,14 +153,14 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			}
 			records = nil
 		}
@@ -165,7 +169,7 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil

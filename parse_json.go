@@ -72,7 +72,7 @@ func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 	return true, keys, nil
 }
 
-func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string) error {
+func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
@@ -86,8 +86,12 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 	}
 	writer := csv.NewWriter(outputF)
 	headers := make([]string, 0)
+
 	headers = append(headers, jsonkeys...)
-	headers = append(headers, geoFields...)
+	//sort.Sort(sort.StringSlice(headers))
+	if !arguments["passthrough"].(bool) {
+		headers = append(headers, geoFields...)
+	}
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -106,6 +110,7 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 	}
 	records := make([][]string, 0)
 	recordChannel := make(chan []string)
+
 	var writeWG WaitGroupCount
 	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	idx := 0
@@ -121,7 +126,7 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			records = nil
 			break
 		}
@@ -158,14 +163,14 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			}
 			records = nil
 		}
@@ -174,7 +179,7 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil

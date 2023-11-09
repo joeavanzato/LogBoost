@@ -153,13 +153,17 @@ func getExtensionKeys(headers []string, input string) ([]string, map[string]stri
 	return headers, keymap
 }
 
-func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, cefKeys []string) error {
+func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, cefKeys []string) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
 		return err
 	}
-	headers = append(headers, geoFields...)
+	// TODO - Sort
+	//sort.Sort(sort.StringSlice(headers))
+	if !tempArgs["passthrough"].(bool) {
+		headers = append(headers, geoFields...)
+	}
 	outputF, err := createOutput(outputFile)
 	if err != nil {
 		return err
@@ -201,7 +205,7 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if scanErr != nil {
@@ -224,14 +228,14 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -239,7 +243,7 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil

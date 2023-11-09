@@ -157,7 +157,8 @@ func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []str
 	return headers
 }
 
-func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string, prefix string) error {
+func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string, prefix string) error {
+
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
@@ -172,7 +173,13 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	writer := csv.NewWriter(outputF)
 	headers := make([]string, 0)
 	headers = append(headers, jsonkeys...)
-	headers = append(headers, geoFields...)
+
+	// Sort JSONKeys alphabetically
+	//sort.Sort(sort.StringSlice(headers))
+
+	if !arguments["passthrough"].(bool) {
+		headers = append(headers, geoFields...)
+	}
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -255,14 +262,14 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 							} else {
 								fileWG.Add(1)
 								jobTracker.AddJob()
-								go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+								go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 								break waitForOthers
 							}
 						}
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 					}
 					records = nil
 				}
@@ -305,7 +312,7 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil

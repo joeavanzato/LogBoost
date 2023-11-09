@@ -49,7 +49,7 @@ func checkCLF(logger zerolog.Logger, file string) (int, error) {
 	}
 }
 
-func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, format int) error {
+func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, format int) error {
 	commonHeaders := []string{"CLIENT", "ID", "USER", "TIMESTAMP", "METHOD", "RESOURCE", "VERSION", "STATUS", "BYTES"}
 	combinedHeaders := []string{"REFERER", "USER AGENT"}
 	inputF, err := openInput(inputFile)
@@ -63,7 +63,9 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		headers = append(headers, combinedHeaders...)
 	}
 
-	headers = append(headers, geoFields...)
+	if !tempArgs["passthrough"].(bool) {
+		headers = append(headers, geoFields...)
+	}
 	outputF, err := createOutput(outputFile)
 	if err != nil {
 		return err
@@ -89,6 +91,7 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		// Should just set this to fixed '3' since it always is
 		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
 	}
+	// TODO - Allow IP address column specification
 	var writeWG WaitGroupCount
 	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	scanner, err := scannerFromFile(inputF)
@@ -105,7 +108,7 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if scanErr != nil {
@@ -128,14 +131,14 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -143,7 +146,7 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil

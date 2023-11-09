@@ -15,6 +15,10 @@ var syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp>[A-
 var syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?:<.+>\s){0,1}(?P<syshost>.*?)\s(?P<msg>.*)`)
 var syslog_generic = regexp.MustCompile(`^(?P<timestamp>[a-zA-Z]{3}\s{1,3}\d{1,2}\s\d{1,2}:\d{2}:\d{2})\s(?:<.+>\s){0,1}(?P<source>[^\s].*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<message>.*)`)
 
+// TODO Parse Logs like below
+//2023-07-21 21:20:22 INFO [MessagingDeliveryService] [Association] Schedule manager refreshed with 0 associations, 0 new associations associated
+//2023-07-21 21:24:37 INFO [HealthCheck] HealthCheck reporting agent health.
+
 func checkSyslog(logger zerolog.Logger, file string) (int, error) {
 	f, err := os.Open(file)
 	defer f.Close()
@@ -50,7 +54,7 @@ func checkSyslog(logger zerolog.Logger, file string) (int, error) {
 	}
 }
 
-func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, syslogFormat int) error {
+func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, syslogFormat int) error {
 	inputF, err := openInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
@@ -68,7 +72,9 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 		headers = append(headers, "TIMESTAMP", "HOST", "PROCESS", "PROCID", "MESSAGE")
 	}
 
-	headers = append(headers, geoFields...)
+	if !arguments["passthrough"].(bool) {
+		headers = append(headers, geoFields...)
+	}
 	outputF, err := createOutput(outputFile)
 	if err != nil {
 		return err
@@ -109,7 +115,7 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if scanErr != nil {
@@ -132,14 +138,14 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -147,7 +153,7 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	closeChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
