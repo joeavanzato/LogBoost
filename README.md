@@ -46,6 +46,22 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 <p align="center">
 <img src="images/json_line_logging.png">
 </p>
+<h4 align="center">Parsing CloudTrail Multi-Line Records</h4>
+<p align="center">
+<img src="images/cloudtrail_parse.png">
+</p>
+<h4 align="center">Parsing arbitrary KV-style logs using provided separators/delimiters</h4>
+<p align="center">
+<img src="images/kv_firewall_logs.png">
+</p>
+<h4 align="center">Parsing Syslog (Generic/RFC 3164/RFC 5424) to CSV </h4>
+<p align="center">
+<img src="images/syslog_parsing.png">
+</p>
+<h4 align="center">Transparently handling GZ files</h4>
+<p align="center">
+<img src="images/gz_parsing.png">
+</p>
 
 
 ### Primary Features
