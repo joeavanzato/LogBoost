@@ -12,7 +12,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,7 +182,7 @@ func FileExists(filename string) bool {
 
 func combineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 	logger.Info().Msg("Combining Outputs per Directory")
-	logger.Info().Msg("Note: The first file in each directory will provide the headers for all subsequent files - those that have a mismatch will be logged and skipped.")
+	logger.Info().Msg("Note: The first file in each directory will provide the headers for all subsequent files - any mismatched columns will be dropped from subsequent files.")
 	fileDirMap := make(map[string][]string)
 
 	err := filepath.WalkDir(arguments["outputdir"].(string), func(path string, d fs.DirEntry, err error) error {
@@ -362,6 +361,7 @@ func readAndSendToChannel(csvFile string, c chan []string, waiter *WaitGroupCoun
 	defer inputHeaderFile.Close()
 	idx := 0
 	reader := csv.NewReader(inputHeaderFile)
+	newIndexOrder := make([]int, 0)
 	for {
 		record, Ferr := reader.Read()
 
@@ -373,15 +373,42 @@ func readAndSendToChannel(csvFile string, c chan []string, waiter *WaitGroupCoun
 			continue
 		}
 		if idx == 0 {
-			if !reflect.DeepEqual(initialHeaders, record) {
-				logger.Error().Msgf("Header Mismatch - Skipping: %v", csvFile)
-				return
-			}
+			/*			if !reflect.DeepEqual(initialHeaders, record) {
+						logger.Error().Msgf("Header Mismatch - Skipping: %v", csvFile)
+						return
+					}*/
+			// Instead of skipping file entirely, lets iterate through the headers and compare one by one to find mismatches
+			newIndexOrder = compareHeaders(initialHeaders, record)
 			idx += 1
 			continue
 		}
+		record = resortRecord(record, newIndexOrder, initialHeaders)
 		c <- record
 	}
+}
+
+func compareHeaders(primaryHeaders []string, secondaryHeaders []string) []int {
+	// return a list of indexes to discard from a record, making a new slice from remainder
+	// builds a new 'index to k
+	newHeaderIndex := make([]int, 0)
+	for _, v := range secondaryHeaders {
+		// Check if the header is in the master list - if it is, get the location - else we will drop it (-1)
+		newIndex := findTargetIndexInSlice(primaryHeaders, v)
+		newHeaderIndex = append(newHeaderIndex, newIndex)
+	}
+	return newHeaderIndex
+}
+
+func resortRecord(record []string, sortOrder []int, initialHeaders []string) []string {
+	newRecord := make([]string, len(initialHeaders))
+	for i, v := range record {
+		if sortOrder[i] == -1 {
+			// Drop the value
+			continue
+		}
+		newRecord[sortOrder[i]] = v
+	}
+	return newRecord
 }
 
 func removeSpace(s string) string {
@@ -470,4 +497,15 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return nil
+}
+
+func getCSVHeaders(csvFile string) ([]string, error) {
+	inputHeaderFile, err := openInput(csvFile)
+	reader := csv.NewReader(inputHeaderFile)
+	defer inputHeaderFile.Close()
+	headers, err := reader.Read()
+	if err != nil {
+		return make([]string, 0), err
+	}
+	return headers, nil
 }
