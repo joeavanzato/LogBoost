@@ -109,7 +109,7 @@ func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 }
 
 func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
-	// Iterate through feeds and downloads each file as $FEEDNAME_TIMESTAMP.txt into newly created 'intel' directory if it does not exist
+	// Iterate through feeds and downloads each file as $FEEDNAME.txt into newly created 'intel' directory if it does not exist
 	if err := os.Mkdir(intelDir, 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		logger.Error().Msg(err.Error())
 		return err
