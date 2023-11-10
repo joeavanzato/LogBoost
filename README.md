@@ -8,7 +8,7 @@
 
 LogBoost is a command-line utility originally designed to enrich IP addresses in CSV files with ASN, Country and City information provided by the freely available MaxMind GeoLite2 DBs.  
 
-LogBoost can also parse and convert a variety of structured and semi-structured log formats to CSV while simultaneously enriching detected IP addresses, including JSON, IIS, W3C, ELF, CLF, CEF, KV, SYSLOG.
+LogBoost can parse and convert a variety of structured and semi-structured log formats to CSV while simultaneously enriching detected IP addresses, including JSON, IIS, W3C, ELF, CLF, CEF, KV, SYSLOG.
 
 The tool can also perform reverse lookups on each IP address detected in the source files to identify currently related domains.  If 'GeoLite2-Domain.mmdb' is detected in the specified MaxMind DB Dir (CWD by default), the associated TLD of the enriched IP address is provided in the output as well.
 
@@ -23,6 +23,33 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 * Parsing CEF-style logging, from Syslog or otherwise, into CSV
 * Finding suspicious IP addresses in any inspected file through threat indicator matching
 * Enriching IP addresses to find associated domain names and geo-locations in any inspected file
+
+
+### Example Usage
+
+To use, just download the latest release binary (along with feed_config.json if you wish to enhance results with threat intelligence.  Additionally, setup a free MaxMind account at https://www.maxmind.com/en/geolite2/signup?utm_source=kb&utm_medium=kb-link&utm_campaign=kb-create-account to get a license key for the free GeoLite2 Databases.  Once that key is acquired, you can either put it in an environment variable (MM_API), put it in a file in the CWD (mm_api.txt) or provide it at the command-line via the flat '-api'.
+
+#### Common Use
+* ```LogBoost.exe -buildti``` - Build the Threat Indicator database locally (only needed once)
+* ```LogBoost.exe -updateti``` - Update the Threat Indicator database - run periodically to get new indicators.
+* ```LogBoost.exe -logdir logs -regex -api XXX``` - Enrich a directory containing one or more CSV files with Geolocation inforrmation
+
+
+* ```LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse``` - Enrich any CSV file within 'input' while also expanding JSOB blobs located in the column named 'data' - the enriched IP address will be pulled from the column named 'client'.
+* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex``` - Same as above but use regex to find the first non-private IP address.
+* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex -useti``` - Same as above but also use the threat indicator db.
+* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex -useti -dns``` - Same as above but also do live DNS lookups.
+
+
+* ```LogBoost.exe -logdir logs -convert -rawtxt``` - Process all .csv/.log/.txt files in 'logs' - look for relevant parsers or parse as raw text as last resort.
+* ```LogBoost.exe -logdir logs -convert -getall``` - Process any file in 'logs', regardless of extension, with relevant parser or as raw text as last resort.
+
+
+* ``` LogBoost.exe -logdir logs -maxgoperfile 40 -batchsize 100 -writebuffer 2000 -concurrentfiles 1000``` - Process up to 1k concurrent files with 40 'threads' per file, each thread handling 100 records and the writer for each output buffering 2000 records at a time.
+
+* ```LogBoost.exe -logdir logs -convert -dns -useti -regex -combine ``` Look for all logs inside 'logs' and enrich regexed IPs with Threat Indicators and DNS, combining all output files into a single CSV.
+
+* ```LogBoost.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -dateformat 2006-01-02 -convert -enddate 01/04/2023``` - Parse and Convert logs storing date in a column/key named 'date' with a format as specified between the specified dates (inclusive ranging)
 
 ### Example Outputs
 <h4 align="center">Enriching Azure Audit Log Export</h4>
@@ -100,7 +127,7 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 
 ### Requirements
 
-To use this tool, a free API key from MaxMind is required - once an account is registered, a personal license key can be generated at https://www.maxmind.com/en/accounts/668938/license-key.
+To use this tool, a free API key from MaxMind is required - once an account is registered, a personal license key can be generated at https://www.maxmind.com/en/accounts/.
 
 This license key must be provided in one of 3 ways to the tool:
 * via commandline argument '-api'
@@ -137,11 +164,9 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 -regex [bool] (default=false) - Scan each line for first IP address matche via regex rather than specifying a specific column name.
 
 -convert [bool] (default=false) - Tells LogBoost to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
-  - IIS - Looks for #Fields and comma-delimited values
-  - W3C - Looks for #Fields and space-delimited values
-  - KV - [TODO] Looks for KV-style logging based on provided -delimiter and -separator values
 -rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified - should be used with -convert.
 -fullparse [bool] - Specify to perform 'deep' key detection on file formats with variable columns such as CSVs with JSON Blobs, CEF, JSON, etc - will increase processing time since we have to read the whole file twice basically.
+ -getall [bool] - Look for any file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
  
 -separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the separator would be '='
 -delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the delimiter would be ','
@@ -168,25 +193,6 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 -enddate [string] - End date of data to parse - defaults to year 2300.  Can be used with or without startdate.
 -datecol [string] - Name of the column/header that contains the date to parse.  Must be provided with startdate/enddate.  Will check for either full equality or if the scanned column name contains the provided string - so be specific.
 -dateformat [string] - Provide the format of the datecol data in golang style ("2006-01-02T15:04:05Z") - rearrange as appropriate (see example). Must be provided with startdate/enddate.
-
--getall [bool] - Look for any file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
-```
-
-### Example Usage
-```
-LogBoost.exe -logdir logs -api XXX
-LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse : Parse CSVs located in 'input' and look for JSON data within a column named data to expand - also look for a column named 'client' to use for detecting an IP address
-LogBoost.exe -logdir input -jsoncol data -fullparse -regex : Expand JSON column named 'data' and regex entire line of data for an IP address to enrich
-LogBoost.exe -buildti : Initialize/build the indicator database - should only be required once to build threats.db
-LogBoost.exe -updateti : Use to download and ingest indicator feed updates
-LogBoost.exe -logdir C:\logs -dns -useti -ipcol ipaddress : Parse the logs present in C:\logs and, use DNS to lookup domains on detected IPs and also use the indicator database - look for IPs in column named 'ipaddress'
-LogBoost.exe -logdir logs -dns -maxgoperfile 40 -batchsize 100 -writebuffer 2000 : Process each file with up to 40 goroutines handling 100 lines per routine and buffering 2000 records before writing to disk - also enrich detected IP addresses with DNS lookups
-LogBoost.exe -logdir C:\azureadlogs -outputdir enriched_logs : Look for all CSVs in directory 'C:\azureadlogs', output logs to 'enriched_logs' and use defaults for IP/JSON columns that may contain IP addresses (Azure Log Exports)
-LogBoost.exe -logdir somelogs -ipcol "IPADDRESS" : Look for all CSVs in directory 'somelogs' and subsequently enrich based on column-named 'IPADDRESS'
-LogBoost.exe -logdir logs -convert : LogBoost will also hunt for .log/.txt files that can be converted to CSV (IIS, W3C)
-LogBoost.exe -logdir C:\logging -maxgoperfile 30 -batchsize 1000 -convert -concurrentfiles 100 : Identify all .csv, .txt and .log files in C:\logging and process 100 files concurrently reading 1000 lines at a time split between 30 goroutines per file.
-LogBoost.exe -logdir logs -updateti -useti -batchsize 1000 -maxgoperfile 40 -concurrentfiles 5000 -regex  -combine : Update and use threat intelligence to process CSVs from "logs" dir using the specified concurrency settings, combining final outputs and using regex to find the appropriate IP address to enrich on a line-by-line basis.
-LogBoost.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -dateformat 2006-01-02 -convert -enddate 01/04/2023 : Parse and Convert IIS logs with a date record between 1/1/23 and 1/4/23 (inclusive)
 ```
 
 ### Threat Intelligence Notes
