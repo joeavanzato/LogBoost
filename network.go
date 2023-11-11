@@ -36,7 +36,9 @@ func setupPrivateNetworks() error {
 		"224.0.0.0/4",    // RFC 3171
 		"::1/128",        // IPv6 loopback
 		"fe80::/10",      // IPv6 link-local
-		"fc00::/7",       // IPv6 unique local addr
+		"fc00::/7",       // Private Internets
+		//"Fd00::/7",
+		"64:ff9b:1::/48", // Private Internets
 	} {
 		_, block, err := net.ParseCIDR(cidr)
 		if err != nil {
@@ -48,6 +50,7 @@ func setupPrivateNetworks() error {
 }
 
 func downloadFile(logger zerolog.Logger, url string, filepath string, key string) (err error) {
+	// TODO - Refactor to handle unit testing
 	if strings.HasPrefix(url, "https://download.maxmind.com") {
 		logger.Info().Msgf("Downloading MaxMind %v DB to path: %v", key, filepath)
 	} else {
