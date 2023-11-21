@@ -1,4 +1,4 @@
-package main
+package helpers
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var privateIPBlocks []*net.IPNet
+var PrivateIPBlocks []*net.IPNet
 
 var resolver = &net.Resolver{
 	PreferGo: true,
@@ -24,7 +24,7 @@ var resolver = &net.Resolver{
 	},
 }
 
-func setupPrivateNetworks() error {
+func SetupPrivateNetworks() error {
 	for _, cidr := range []string{
 		"127.0.0.0/8",    // IPv4 loopback
 		"10.0.0.0/8",     // RFC1918
@@ -44,12 +44,12 @@ func setupPrivateNetworks() error {
 		if err != nil {
 			return err
 		}
-		privateIPBlocks = append(privateIPBlocks, block)
+		PrivateIPBlocks = append(PrivateIPBlocks, block)
 	}
 	return nil
 }
 
-func downloadFile(logger zerolog.Logger, url string, filepath string, key string) (err error) {
+func DownloadFile(logger zerolog.Logger, url string, filepath string, key string) (err error) {
 	// TODO - Refactor to handle unit testing
 	if strings.HasPrefix(url, "https://download.maxmind.com") {
 		logger.Info().Msgf("Downloading MaxMind %v DB to path: %v", key, filepath)
@@ -77,7 +77,7 @@ func downloadFile(logger zerolog.Logger, url string, filepath string, key string
 	return nil
 }
 
-func lookupIPRecords(ip string) []string {
+func LookupIPRecords(ip string) []string {
 	// TODO It is possible to set custom resolvers here - should explore setting up a rotating resolver to spread requests between multiple nameservers
 	// https://stackoverflow.com/questions/59889882/specifying-dns-server-for-lookup-in-go
 	records, err := net.DefaultResolver.LookupAddr(context.Background(), ip)
@@ -87,12 +87,12 @@ func lookupIPRecords(ip string) []string {
 	return records
 }
 
-func isPrivateIP(ip net.IP, ipstring string) bool {
+func IsPrivateIP(ip net.IP, ipstring string) bool {
 	// TODO There is also ip.IsPrivate() - does that supercede the need for these checks?
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsMulticast() {
 		return true
 	}
-	for _, block := range privateIPBlocks {
+	for _, block := range PrivateIPBlocks {
 		if block.Contains(ip) {
 			return true
 		}

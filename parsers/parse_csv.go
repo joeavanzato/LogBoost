@@ -1,7 +1,10 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -63,16 +66,16 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 	// Add Geo fields to current header setup
 	if jsonColumn != -1 {
 		headers = append(headers, jsonKeys...)
-		headers = append(headers, extraKeysColumnName)
+		headers = append(headers, vars.ExtraKeysColumnName)
 	}
 	if !arguments["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
 	return ipAddressColumn, jsonColumn, headers, jsonKeys, nil
 }
 
-func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) {
-	parser, writer, inputF1, _, err := getNewPW(logger, inputFile, outputFile)
+func ProcessCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any) {
+	parser, writer, inputF1, _, err := helpers.GetNewPW(logger, inputFile, outputFile)
 	defer inputF1.Close()
 	if err != nil {
 		return
@@ -83,7 +86,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		return
 	}
 
-	newParse, newWrite, NewInputF, NewOutputF, err := getNewPW(logger, inputFile, outputFile)
+	newParse, newWrite, NewInputF, NewOutputF, err := helpers.GetNewPW(logger, inputFile, outputFile)
 	defer NewInputF.Close()
 	if err != nil {
 		return
@@ -91,27 +94,27 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 
 	dateindex := -1
 	if arguments["datecol"].(string) != "" {
-		dateindex = findTargetIndexInSlice(headers, arguments["datecol"].(string))
+		dateindex = helpers.FindTargetIndexInSlice(headers, arguments["datecol"].(string))
 	}
 
 	idx := 0
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	recordChannel := make(chan []string)
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int), &writeWG)
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, newWrite, logger, NewOutputF, arguments["writebuffer"].(int), &writeWG)
 	for {
 		record, Ferr := newParse.Read()
 		if Ferr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if Ferr != nil {
@@ -139,7 +142,7 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			for k, v := range keymap {
 				tmpRecord, tmpExtra = buildDeepRecordJSON("", k, v, jsonKeys, tmpRecord, tmpExtra)
 			}
-			extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
+			extraIndex := helpers.FindTargetIndexInSlice(headers, vars.ExtraKeysColumnName)
 			record = append(record, tmpRecord...)
 			if extraIndex != -1 {
 				record = append(record, tmpExtra)
@@ -158,14 +161,14 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -173,8 +176,8 @@ func processCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, jsonColumn, arguments["regex"].(bool), arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 	records = nil
-	closeChannelWhenDone(recordChannel, &fileWG)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 }

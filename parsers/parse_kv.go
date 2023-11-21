@@ -1,8 +1,11 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
 	"fmt"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -14,7 +17,7 @@ import (
 
 var kv_equals_base = regexp.MustCompile(`(?P<key>[^=\s]+)=\"{0,1}(?P<value>[^,]+)\"{0,1},?`)
 
-func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool, []string, error) {
+func CheckKV(logger zerolog.Logger, file string, arguments map[string]any) (bool, []string, error) {
 	regex_ := fmt.Sprintf(`(?P<key>[^%v\s]+)%v\"{0,1}(?P<value>[^%v]+)\"{0,1}%v?`, arguments["separator"].(string), arguments["separator"].(string), arguments["delimiter"].(string), arguments["delimiter"].(string))
 	kv_regex := regexp.MustCompile(regex_)
 	f, err := os.Open(file)
@@ -23,7 +26,7 @@ func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool
 	if err != nil {
 		return false, headers, err
 	}
-	scanner, err := scannerFromFile(f)
+	scanner, err := helpers.ScannerFromFile(f)
 	if err != nil {
 		return false, headers, err
 	}
@@ -49,7 +52,7 @@ func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool
 			}
 			for _, v := range match {
 				// each object is length of 3 -match content, key then value - so v[1] represents the 'key'
-				if findTargetIndexInSlice(headers, v[1]) == -1 {
+				if helpers.FindTargetIndexInSlice(headers, v[1]) == -1 {
 					headers = append(headers, v[1])
 				}
 			}
@@ -57,7 +60,7 @@ func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool
 			if fullparse {
 				continue
 			} else {
-				headers = append(headers, extraKeysColumnName)
+				headers = append(headers, vars.ExtraKeysColumnName)
 				return true, headers, nil
 			}
 		} else {
@@ -70,19 +73,19 @@ func checkKV(logger zerolog.Logger, file string, arguments map[string]any) (bool
 	return true, headers, nil
 }
 
-func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, kvheaders []string) error {
+func ParseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, kvheaders []string) error {
 	// If full parse, then we will do similar to JSON/CEF dynamic insertion
 	// otherwise, we will only use columns that exist on the first line and everything else will be shoved into a string under var named extra_column - the last line of the current headers
 	// boilerplate
 	regex_ := fmt.Sprintf(`(?P<key>[^%v\s]+)%v\"{0,1}(?P<value>[^%v]+)\"{0,1}%v?`, arguments["separator"].(string), arguments["separator"].(string), arguments["delimiter"].(string), arguments["delimiter"].(string))
 	kv_regex := regexp.MustCompile(regex_)
-	inputF, err := openInput(inputFile)
+	inputF, err := helpers.OpenInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	outputF, err := createOutput(outputFile)
+	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
@@ -93,28 +96,28 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 	// TODO - Sort
 	//sort.Sort(sort.StringSlice(headers))
 	if !arguments["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	scanner, err := scannerFromFile(inputF)
+	scanner, err := helpers.ScannerFromFile(inputF)
 	if err != nil {
 		return err
 	}
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
 	recordChannel := make(chan []string)
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	idx := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -128,7 +131,7 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+			go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			records = nil
 			break
 		}
@@ -153,14 +156,14 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+				go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			}
 			records = nil
 		}
@@ -169,8 +172,8 @@ func parseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-	closeChannelWhenDone(recordChannel, &fileWG)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
 }
@@ -183,7 +186,7 @@ func buildKVRecord(line string, kvheaders []string, regex *regexp.Regexp) []stri
 	}
 	tmpExtra := ""
 	for _, v := range match {
-		headerIndex := findTargetIndexInSlice(kvheaders, v[1])
+		headerIndex := helpers.FindTargetIndexInSlice(kvheaders, v[1])
 		if !strings.HasPrefix(v[2], "\"") && strings.HasSuffix(v[2], "\"") {
 			v[2] = strings.TrimSuffix(v[2], "\"")
 		}
@@ -193,7 +196,7 @@ func buildKVRecord(line string, kvheaders []string, regex *regexp.Regexp) []stri
 			tempRecord[headerIndex] = v[2]
 		}
 	}
-	extraIndex := findTargetIndexInSlice(kvheaders, extraKeysColumnName)
+	extraIndex := helpers.FindTargetIndexInSlice(kvheaders, vars.ExtraKeysColumnName)
 	if extraIndex != -1 {
 		tempRecord[extraIndex] = tmpExtra
 	}

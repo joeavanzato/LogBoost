@@ -1,15 +1,16 @@
-package main
+package helpers
 
 import (
 	"errors"
 	"fmt"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/rs/zerolog"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
+func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -28,24 +29,24 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 	}
 
 	for _, e := range entries {
-		if strings.HasSuffix(e, maxMindFiles["ASN"]) {
-			maxMindStatus["ASN"] = true
-			maxMindFileLocations["ASN"] = e
-		} else if strings.HasSuffix(e, maxMindFiles["City"]) {
-			maxMindStatus["City"] = true
-			maxMindFileLocations["City"] = e
-		} else if strings.HasSuffix(e, maxMindFiles["Country"]) {
-			maxMindStatus["Country"] = true
-			maxMindFileLocations["Country"] = e
-		} else if strings.HasSuffix(e, maxMindFiles["Domain"]) {
-			maxMindStatus["Domain"] = true
-			maxMindFileLocations["Domain"] = e
+		if strings.HasSuffix(e, vars.MaxMindFiles["ASN"]) {
+			vars.MaxMindStatus["ASN"] = true
+			vars.MaxMindFileLocations["ASN"] = e
+		} else if strings.HasSuffix(e, vars.MaxMindFiles["City"]) {
+			vars.MaxMindStatus["City"] = true
+			vars.MaxMindFileLocations["City"] = e
+		} else if strings.HasSuffix(e, vars.MaxMindFiles["Country"]) {
+			vars.MaxMindStatus["Country"] = true
+			vars.MaxMindFileLocations["Country"] = e
+		} else if strings.HasSuffix(e, vars.MaxMindFiles["Domain"]) {
+			vars.MaxMindStatus["Domain"] = true
+			vars.MaxMindFileLocations["Domain"] = e
 		}
 	}
 
-	for k, v := range maxMindStatus {
+	for k, v := range vars.MaxMindStatus {
 		if v == true {
-			logger.Info().Msgf("Found Existing %v DB file at: %v", k, maxMindFileLocations[k])
+			logger.Info().Msgf("Found Existing %v DB file at: %v", k, vars.MaxMindFileLocations[k])
 			if arguments["updategeo"].(bool) {
 				if k == "Domain" {
 					logger.Info().Msg("Skipping Domain DB Update")
@@ -58,7 +59,7 @@ func findOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 				}
 			}
 		} else {
-			logger.Info().Msgf("Could not find %v DB at %v\\%v, downloading!", k, dir, maxMindFiles[k])
+			logger.Info().Msgf("Could not find %v DB at %v\\%v, downloading!", k, dir, vars.MaxMindFiles[k])
 			if k == "Domain" {
 				logger.Info().Msg("Skipping Domain DB Update")
 				continue
@@ -76,7 +77,7 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
 	// Download It First
 	// TODO - Uncomment when done testing
-	err := downloadFile(logger, maxMindURLs[k], gzFile, k)
+	err := DownloadFile(logger, vars.MaxMindURLs[k], gzFile, k)
 	if err != nil {
 		logger.Error().Msg("Problem Downloading File!")
 		logger.Error().Msg(err.Error())
@@ -105,11 +106,11 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 	}
 	// Copy desired file out to main dir
 	destFile := fmt.Sprintf("GeoLite2-%v.mmdb", k)
-	err = copyFile(file[0], destFile)
+	err = CopyFile(file[0], destFile)
 	if err != nil {
-		maxMindFileLocations[k] = file[0]
+		vars.MaxMindFileLocations[k] = file[0]
 	} else {
-		maxMindFileLocations[k] = destFile
+		vars.MaxMindFileLocations[k] = destFile
 	}
 
 	// Remove downloaded gz
@@ -132,10 +133,10 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 	return nil
 }
 
-func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
+func SetAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 	apiKey := ""
 	if arguments["api"].(string) == "" {
-		logger.Info().Msg("API Key not provided at command line - checking for ENV VAR")
+		logger.Info().Msg("API Key not provided at command line - checking for ENV VAR 'MM_API'")
 		// API not provided at cmdline
 		val, exists := os.LookupEnv("MM_API")
 		if exists {
@@ -148,7 +149,7 @@ func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 				logger.Error().Msgf("Could not find mm_api.txt - downloads not possible.")
 			}
 			logger.Info().Msgf("Found mm_api.txt")
-			apiKey = ReadFileToSlice("mm_api.txt", logger)[0]
+			apiKey = FileToSlice("mm_api.txt", logger)[0]
 		}
 	} else {
 		logger.Info().Msgf("Reading API Key from provided commandline")
@@ -158,12 +159,12 @@ func setAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 		logger.Error().Msg("Could not find valid MaxMind API Key")
 		return errors.New("Could not find valid MaxMind API Key")
 	}
-	geoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=%v&suffix=tar.gz", apiKey)
-	geoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%v&suffix=tar.gz", apiKey)
-	geoLiteCountryDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%v&suffix=tar.gz", apiKey)
+	vars.GeoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=%v&suffix=tar.gz", apiKey)
+	vars.GeoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%v&suffix=tar.gz", apiKey)
+	vars.GeoLiteCountryDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%v&suffix=tar.gz", apiKey)
 
-	maxMindURLs["ASN"] = geoLiteASNDBURL
-	maxMindURLs["City"] = geoLiteCityDBURL
-	maxMindURLs["Country"] = geoLiteCountryDBURL
+	vars.MaxMindURLs["ASN"] = vars.GeoLiteASNDBURL
+	vars.MaxMindURLs["City"] = vars.GeoLiteCityDBURL
+	vars.MaxMindURLs["Country"] = vars.GeoLiteCountryDBURL
 	return nil
 }

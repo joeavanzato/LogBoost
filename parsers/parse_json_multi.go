@@ -1,9 +1,12 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -19,9 +22,9 @@ import (
 
 var commonJSONMultiLineHeaders = []string{"{\"Records\":[", "{\"Records\": ["}
 
-func checkMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (bool, string, error) {
+func CheckMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (bool, string, error) {
 	// This will be a naive check that basically examines the first line of the document to identify if it appears to be the start of a multi-line JSON object
-	// These types of documents will often start with the string '{"Records":['
+	// These lbtypes of documents will often start with the string '{"Records":['
 	// The general strategy will be to read the file looking for individual events as delimited by {} - so basically we will run a buffer until we find the final closing } for an event
 	// Then we will process the event as normal JSON - with shallow or deep parsing like per-line JSON logging
 	f, err := os.Open(file)
@@ -34,7 +37,7 @@ func checkMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (boo
 	limitMax := 20
 	size := 0
 	//r := bufio.NewReader(f)
-	r, rerr := bufferFromFile(f)
+	r, rerr := helpers.BufferFromFile(f)
 	if rerr != nil {
 		logger.Error().Msg(err.Error())
 		return false, "", rerr
@@ -66,14 +69,14 @@ func checkMultiLineJSON(logger zerolog.Logger, file string, fullParse bool) (boo
 	return false, "", err
 }
 
-func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []string {
+func ParseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []string {
 	f, err := os.Open(file)
 	defer f.Close()
 	if err != nil {
 	}
 	//r := bufio.NewReader(f)
 	headers := make([]string, 0)
-	r, rerr := bufferFromFile(f)
+	r, rerr := helpers.BufferFromFile(f)
 	if rerr != nil {
 		return headers
 	}
@@ -153,19 +156,19 @@ func parseMultiLineJSONHeaders(file string, prefix string, fullParse bool) []str
 	}
 	//fmt.Printf("Events Detected: %v\n", eventCount)
 	//fmt.Println(headers)
-	headers = append(headers, extraKeysColumnName)
+	headers = append(headers, vars.ExtraKeysColumnName)
 	return headers
 }
 
-func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string, prefix string) error {
+func ParseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string, prefix string) error {
 
-	inputF, err := openInput(inputFile)
+	inputF, err := helpers.OpenInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	outputF, err := createOutput(outputFile)
+	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
@@ -178,7 +181,7 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	//sort.Sort(sort.StringSlice(headers))
 
 	if !arguments["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
 	err = writer.Write(headers)
 	if err != nil {
@@ -187,7 +190,7 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	}
 
 	//r := bufio.NewReader(inputF)
-	r, rerr := bufferFromFile(inputF)
+	r, rerr := helpers.BufferFromFile(inputF)
 	if rerr != nil {
 		return rerr
 	}
@@ -204,17 +207,17 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	repeated := 0
 	oldEventCount := 0
 
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
 	recordChannel := make(chan []string)
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	// TODO - setup IP address column detection based on provided column name to allow more flexibility in specifying column rather than only regex
 
 	for {
@@ -242,7 +245,7 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 				for k, v := range keymap {
 					record, tmpExtra = buildDeepRecordJSON("", k, v, headers, record, tmpExtra)
 				}
-				extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
+				extraIndex := helpers.FindTargetIndexInSlice(headers, vars.ExtraKeysColumnName)
 				if extraIndex != -1 {
 					record[extraIndex] += tmpExtra
 				}
@@ -262,14 +265,14 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 							} else {
 								fileWG.Add(1)
 								jobTracker.AddJob()
-								go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+								go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 								break waitForOthers
 							}
 						}
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 					}
 					records = nil
 				}
@@ -312,8 +315,8 @@ func parseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-	closeChannelWhenDone(recordChannel, &fileWG)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
 }
@@ -325,19 +328,19 @@ func parseDeepJSONKeys(startingKey string, k string, v any, headers []string) []
 	}
 	switch vv := v.(type) {
 	case string:
-		if findTargetIndexInSlice(headers, k) == -1 {
+		if helpers.FindTargetIndexInSlice(headers, k) == -1 {
 			headers = append(headers, k)
 		}
 	case float64:
-		if findTargetIndexInSlice(headers, k) == -1 {
+		if helpers.FindTargetIndexInSlice(headers, k) == -1 {
 			headers = append(headers, k)
 		}
 	case []interface{}:
-		if findTargetIndexInSlice(headers, k) == -1 {
+		if helpers.FindTargetIndexInSlice(headers, k) == -1 {
 			headers = append(headers, k)
 		}
 	case bool:
-		if findTargetIndexInSlice(headers, k) == -1 {
+		if helpers.FindTargetIndexInSlice(headers, k) == -1 {
 			headers = append(headers, k)
 		}
 	case map[string]interface{}:
@@ -352,13 +355,13 @@ func parseDeepJSONKeys(startingKey string, k string, v any, headers []string) []
 			}
 			if !ok && !ok2 {
 				i = fmt.Sprintf("%v_%v", k, i)
-				if findTargetIndexInSlice(headers, i) == -1 {
+				if helpers.FindTargetIndexInSlice(headers, i) == -1 {
 					headers = append(headers, i)
 				}
 			}
 		}
 	default:
-		if findTargetIndexInSlice(headers, k) == -1 {
+		if helpers.FindTargetIndexInSlice(headers, k) == -1 {
 			headers = append(headers, k)
 		}
 	}
@@ -372,21 +375,21 @@ func buildDeepRecordJSON(startingKey string, k string, v any, headers []string, 
 	}
 	switch vv := v.(type) {
 	case string:
-		headerIndex := findTargetIndexInSlice(headers, k)
+		headerIndex := helpers.FindTargetIndexInSlice(headers, k)
 		if headerIndex == -1 {
 			tmpExtra += fmt.Sprintf("%v:%v, ", k, v.(string))
 			break
 		}
 		record[headerIndex] = v.(string)
 	case float64:
-		headerIndex := findTargetIndexInSlice(headers, k)
+		headerIndex := helpers.FindTargetIndexInSlice(headers, k)
 		if headerIndex == -1 {
 			tmpExtra += fmt.Sprintf("%v:%v, ", k, strconv.FormatFloat(v.(float64), 'E', -1, 64))
 			break
 		}
 		record[headerIndex] = strconv.FormatFloat(v.(float64), 'E', -1, 64)
 	case []interface{}:
-		headerIndex := findTargetIndexInSlice(headers, k)
+		headerIndex := helpers.FindTargetIndexInSlice(headers, k)
 		s := make([]string, len(vv))
 		for i, u := range vv {
 			s[i] = fmt.Sprint(u)
@@ -397,7 +400,7 @@ func buildDeepRecordJSON(startingKey string, k string, v any, headers []string, 
 		}
 		record[headerIndex] = fmt.Sprint(s)
 	case bool:
-		headerIndex := findTargetIndexInSlice(headers, k)
+		headerIndex := helpers.FindTargetIndexInSlice(headers, k)
 		if headerIndex == -1 {
 			tmpExtra += fmt.Sprintf("%v:%v, ", k, strconv.FormatBool(v.(bool)))
 			break
@@ -415,7 +418,7 @@ func buildDeepRecordJSON(startingKey string, k string, v any, headers []string, 
 			}
 			if !ok && !ok2 {
 				i := fmt.Sprintf("%v_%v", k, kk)
-				headerIndex := findTargetIndexInSlice(headers, i)
+				headerIndex := helpers.FindTargetIndexInSlice(headers, i)
 				if headerIndex == -1 {
 					tmpExtra += fmt.Sprintf("%v:%v, ", i, uu)
 				} else {

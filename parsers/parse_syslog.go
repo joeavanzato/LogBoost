@@ -1,7 +1,10 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -19,14 +22,14 @@ var syslog_generic = regexp.MustCompile(`^(?P<timestamp>[a-zA-Z]{3}\s{1,3}\d{1,2
 //2023-07-21 21:20:22 INFO [MessagingDeliveryService] [Association] Schedule manager refreshed with 0 associations, 0 new associations associated
 //2023-07-21 21:24:37 INFO [HealthCheck] HealthCheck reporting agent health.
 
-func checkSyslog(logger zerolog.Logger, file string) (int, error) {
+func CheckSyslog(logger zerolog.Logger, file string) (int, error) {
 	f, err := os.Open(file)
 	defer f.Close()
 	if err != nil {
 		return -1, err
 	}
 
-	scanner, err := scannerFromFile(f)
+	scanner, err := helpers.ScannerFromFile(f)
 	if err != nil {
 		return -1, err
 	}
@@ -54,12 +57,12 @@ func checkSyslog(logger zerolog.Logger, file string) (int, error) {
 	}
 }
 
-func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, syslogFormat int) error {
-	inputF, err := openInput(inputFile)
-	defer inputF.Close()
+func ParseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, syslogFormat int) error {
+	inputF, err := helpers.OpenInput(inputFile)
 	if err != nil {
 		return err
 	}
+	defer inputF.Close()
 	headers := make([]string, 0)
 	if syslogFormat == 0 {
 		// RFC 3164
@@ -73,9 +76,9 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 	}
 
 	if !arguments["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
-	outputF, err := createOutput(outputFile)
+	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		return err
 	}
@@ -85,23 +88,23 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	recordChannel := make(chan []string)
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
 	dateindex := -1
 	if tempArgs["datecol"].(string) != "" {
-		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
+		dateindex = helpers.FindTargetIndexInSlice(headers, "TIMESTAMP")
 	}
-	ipAddressColumn := findTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
-	scanner, err := scannerFromFile(inputF)
+	ipAddressColumn := helpers.FindTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
+	scanner, err := helpers.ScannerFromFile(inputF)
 	if err != nil {
 		return err
 	}
@@ -115,7 +118,7 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if scanErr != nil {
@@ -138,14 +141,14 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -153,8 +156,8 @@ func parseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-	closeChannelWhenDone(recordChannel, &fileWG)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
 }

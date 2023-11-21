@@ -1,9 +1,12 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -13,7 +16,7 @@ import (
 	"sync"
 )
 
-func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []string, error) {
+func CheckJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []string, error) {
 	// Check if we can successfully unmarshall the first line of the file - if yes, we assume it is JSON-per-line based logging
 	f, err := os.Open(file)
 	keys := make([]string, 0)
@@ -21,7 +24,7 @@ func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 	if err != nil {
 		return false, keys, err
 	}
-	scanner, err := scannerFromFile(f)
+	scanner, err := helpers.ScannerFromFile(f)
 	if err != nil {
 		return false, keys, err
 	}
@@ -58,7 +61,7 @@ func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 			if fullParse {
 				continue
 			} else {
-				keys = append(keys, extraKeysColumnName)
+				keys = append(keys, vars.ExtraKeysColumnName)
 				return true, keys, nil
 			}
 
@@ -72,14 +75,14 @@ func checkJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 	return true, keys, nil
 }
 
-func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string) error {
-	inputF, err := openInput(inputFile)
+func ParseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, inputFile string, outputFile string, tempArgs map[string]any, jsonkeys []string) error {
+	inputF, err := helpers.OpenInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	outputF, err := createOutput(outputFile)
+	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
@@ -90,29 +93,29 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 	headers = append(headers, jsonkeys...)
 	//sort.Sort(sort.StringSlice(headers))
 	if !arguments["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	scanner, err := scannerFromFile(inputF)
+	scanner, err := helpers.ScannerFromFile(inputF)
 	if err != nil {
 		return err
 	}
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
 	recordChannel := make(chan []string)
 
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
 	idx := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -126,7 +129,7 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+			go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			records = nil
 			break
 		}
@@ -142,7 +145,7 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 		for k, v := range keymap {
 			record, tmpExtra = buildDeepRecordJSON("", k, v, headers, record, tmpExtra)
 		}
-		extraIndex := findTargetIndexInSlice(headers, extraKeysColumnName)
+		extraIndex := helpers.FindTargetIndexInSlice(headers, vars.ExtraKeysColumnName)
 		if extraIndex != -1 {
 			record[extraIndex] += tmpExtra
 		}
@@ -163,14 +166,14 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+				go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
 			}
 			records = nil
 		}
@@ -179,8 +182,8 @@ func parseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 	fileWG.Add(1)
 	// Catchall in case there are still records to process
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
-	closeChannelWhenDone(recordChannel, &fileWG)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, -1, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, -1)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
 }
@@ -203,7 +206,7 @@ func buildRecordJSON(line string, jsonKeys []string) []string {
 	tmpExtra := ""
 
 	for k, v := range keymap {
-		headerIndex := findTargetIndexInSlice(jsonKeys, k)
+		headerIndex := helpers.FindTargetIndexInSlice(jsonKeys, k)
 		/*		if headerIndex == -1 {
 				continue
 			}*/
@@ -251,7 +254,7 @@ func buildRecordJSON(line string, jsonKeys []string) []string {
 			fmt.Println(r)
 		}
 	}
-	extraIndex := findTargetIndexInSlice(jsonKeys, extraKeysColumnName)
+	extraIndex := helpers.FindTargetIndexInSlice(jsonKeys, vars.ExtraKeysColumnName)
 	if extraIndex != -1 {
 		tempRecord[extraIndex] = tmpExtra
 	}

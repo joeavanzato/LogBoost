@@ -1,4 +1,4 @@
-package main
+package helpers
 
 import (
 	"math/big"
@@ -28,8 +28,8 @@ type IPNetGenerator struct {
 	current net.IP
 }
 
-// New creates a new IPNetGenerator from a CIDR string, or an error if the CIDR is invalid.
-func New(cidr string) (*IPNetGenerator, error) {
+// NewIPNetGenerator creates a new IPNetGenerator from a CIDR string, or an error if the CIDR is invalid.
+func NewIPNetGenerator(cidr string) (*IPNetGenerator, error) {
 	_, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return nil, err

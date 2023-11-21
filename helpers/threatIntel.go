@@ -1,10 +1,11 @@
-package main
+package helpers
 
 import (
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/joeavanzato/logboost/lbtypes"
 	"github.com/rs/zerolog"
 	"net"
 	"os"
@@ -13,8 +14,8 @@ import (
 	"time"
 )
 
-var threatDBFile = "threats.db"
-var useIntel = false
+var ThreatDBFile = "threats.db"
+var UseIntel = false
 var intelDir = "intel"
 var feedName = "feed_config.json"
 
@@ -31,8 +32,8 @@ type threatsCatReport struct {
 	count    int
 }
 
-func summarizeThreatDB(logger zerolog.Logger) {
-	db, err := openDBConnection(logger)
+func SummarizeThreatDB(logger zerolog.Logger) {
+	db, err := OpenDBConnection(logger)
 	logger.Info().Msg("Summarized ThreatDB Info")
 	if err != nil {
 		logger.Error().Msg("Could not initialize access to threat DB!")
@@ -64,12 +65,12 @@ func summarizeThreatDB(logger zerolog.Logger) {
 	}
 }
 
-func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
+func BuildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 	// First check if the db exists - if not, initialize the database
 	// Table name: ips
 	// Columns (all string): ip, url, type
 	// type values: proxy, suspicious, tor
-	_, err := os.Stat(threatDBFile)
+	_, err := os.Stat(ThreatDBFile)
 	if errors.Is(err, os.ErrNotExist) {
 		initErrr := initializeThreatDB(logger)
 		if initErrr != nil {
@@ -104,7 +105,7 @@ func buildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 		return ingestErr
 	}
 
-	useIntel = true
+	UseIntel = true
 	return nil
 }
 
@@ -115,14 +116,14 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 		return err
 	}
 	//t := time.Now().Format("20060102150405")
-	var waiter WaitGroupCount
+	var waiter lbtypes.WaitGroupCount
 	for i := 0; i < len(feeds.Feeds); i++ {
 		i := i
 		go func() {
 			waiter.Add(1)
 			defer waiter.Done()
 			destFile := fmt.Sprintf("%v\\%v.txt", intelDir, feeds.Feeds[i].Name)
-			Derr := downloadFile(logger, feeds.Feeds[i].URL, destFile, "")
+			Derr := DownloadFile(logger, feeds.Feeds[i].URL, destFile, "")
 			if Derr != nil {
 				logger.Error().Msgf("Error Getting File from %v: %v ", feeds.Feeds[i].URL, Derr.Error())
 			}
@@ -135,13 +136,13 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 }
 
 func initializeThreatDB(logger zerolog.Logger) error {
-	file, CreateErr := os.Create(threatDBFile) // Create SQLite file
+	file, CreateErr := os.Create(ThreatDBFile) // Create SQLite file
 	if CreateErr != nil {
 		logger.Error().Msg(CreateErr.Error())
 		return CreateErr
 	}
 	file.Close()
-	db, _ := sql.Open("sqlite3", threatDBFile)
+	db, _ := sql.Open("sqlite3", ThreatDBFile)
 	defer db.Close()
 	createTableStatement := `CREATE TABLE ips ("ip" TEXT PRIMARY KEY, "category" TEXT, UNIQUE(ip)) WITHOUT ROWID;`
 	_, exeE := db.Exec(createTableStatement)
@@ -152,8 +153,8 @@ func initializeThreatDB(logger zerolog.Logger) error {
 	return nil
 }
 
-func openDBConnection(logger zerolog.Logger) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", threatDBFile)
+func OpenDBConnection(logger zerolog.Logger) (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", ThreatDBFile)
 	return db, err
 }
 
@@ -161,7 +162,7 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	logger.Info().Msg("Ingesting Intelligence Feeds...")
 	typeMap := make(map[string]string)
 	urlMap := make(map[string]string)
-	db, err := openDBConnection(logger)
+	db, err := OpenDBConnection(logger)
 	if err != nil {
 		return err
 	}
@@ -180,7 +181,7 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 			// Indicates the file is not one we downloaded in this process - some exterrnal intel or something else.
 			continue
 		}
-		err = ingestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
+		err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
@@ -189,9 +190,9 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	return nil
 }
 
-func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger zerolog.Logger) error {
+func IngestFile(inputFile string, iptype string, url string, db *sql.DB, logger zerolog.Logger) error {
 	logger.Info().Msgf("Ingesting %v", inputFile)
-	fileLines := ReadFileToSlice(inputFile, logger)
+	fileLines := FileToSlice(inputFile, logger)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -206,13 +207,13 @@ func ingestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 		if strings.HasPrefix(lineTrimmed, "#") {
 			continue
 		}
-		v, e := regexFirstPublicIPFromString(lineTrimmed)
+		v, e := RegexFirstPublicIPFromString(lineTrimmed)
 		if e {
 			ipParse := net.ParseIP(v)
 			if ipParse == nil {
 				continue
 			}
-			if isPrivateIP(ipParse, v) {
+			if IsPrivateIP(ipParse, v) {
 				continue
 			}
 			ingestRecord(v, iptype, stmt, logger)
@@ -267,17 +268,17 @@ func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
 	return "", false, err
 }
 
-func updateVPNList(logger zerolog.Logger) {
+func UpdateVPNList(logger zerolog.Logger) {
 	url := "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt"
 	file := "vpn_full_feed_X4BNet.txt"
 	dest := fmt.Sprintf("%v\\%v", intelDir, file)
-	dlerr := downloadFile(logger, url, dest, "")
+	dlerr := DownloadFile(logger, url, dest, "")
 	if dlerr != nil {
 		logger.Error().Msgf("Error Updating VPN List: %v", dlerr.Error())
 		return
 	}
-	ipList := ReadFileToSlice(dest, logger)
-	db, dberr := openDBConnection(logger)
+	ipList := FileToSlice(dest, logger)
+	db, dberr := OpenDBConnection(logger)
 	if dberr != nil {
 		logger.Error().Msg(dberr.Error())
 		return
@@ -295,7 +296,7 @@ func updateVPNList(logger zerolog.Logger) {
 	defer stmt.Close()
 	logger.Info().Msgf("Ingesting %v", dest)
 	for _, v := range ipList {
-		gen, err := New(v)
+		gen, err := NewIPNetGenerator(v)
 		if err != nil {
 			continue
 		}

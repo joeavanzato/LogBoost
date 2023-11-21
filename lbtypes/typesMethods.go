@@ -1,4 +1,4 @@
-package main
+package lbtypes
 
 import (
 	"github.com/oschwald/maxminddb-golang"
@@ -86,39 +86,39 @@ func (tm *threadMap) Get(key string) (any, bool) {
 
 // Used to track overall data size processed by the script - accessed by multiple goroutines concurrently so we make it threadsafe
 type SizeTracker struct {
-	inputSizeMBytes      int
-	outputSizeMBytes     int
-	mw                   sync.RWMutex
-	actualFilesProcessed int
+	InputSizeMBytes      int
+	OutputSizeMBytes     int
+	Mw                   sync.RWMutex
+	ActualFilesProcessed int
 }
 
 func (s *SizeTracker) AddBytes(in int, out int) {
-	s.mw.Lock()
-	defer s.mw.Unlock()
-	s.inputSizeMBytes += in
-	s.outputSizeMBytes += out
-	s.actualFilesProcessed += 1
+	s.Mw.Lock()
+	defer s.Mw.Unlock()
+	s.InputSizeMBytes += in
+	s.OutputSizeMBytes += out
+	s.ActualFilesProcessed += 1
 }
 
 // Used to help keep track of jobs in a WaitGroup
-type runningJobs struct {
+type RunningJobs struct {
 	JobCount int
-	mw       sync.RWMutex
+	Mw       sync.RWMutex
 }
 
-func (job *runningJobs) GetJobs() int {
-	job.mw.RLock()
-	defer job.mw.RUnlock()
+func (job *RunningJobs) GetJobs() int {
+	job.Mw.RLock()
+	defer job.Mw.RUnlock()
 	return job.JobCount
 }
-func (job *runningJobs) AddJob() {
-	job.mw.Lock()
-	defer job.mw.Unlock()
+func (job *RunningJobs) AddJob() {
+	job.Mw.Lock()
+	defer job.Mw.Unlock()
 	job.JobCount += 1
 }
-func (job *runningJobs) SubJob() {
-	job.mw.Lock()
-	defer job.mw.Unlock()
+func (job *RunningJobs) SubJob() {
+	job.Mw.Lock()
+	defer job.Mw.Unlock()
 	job.JobCount -= 1
 }
 

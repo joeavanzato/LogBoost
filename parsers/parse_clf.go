@@ -1,7 +1,10 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -14,7 +17,7 @@ import (
 var commonFormat = regexp.MustCompile(`(?P<client>.*?)\s(?P<identity>.*?)\s(?P<user>.*?)\s\[(?P<timestamp>.*?)\]\s\"(?P<httpmethod>.*?)\s(?P<httpresource>.*?)\s(?P<httpversion>.*?)\"\s(?P<httpstatus>.*?)\s(?P<bytes>.*)`)
 var combinedFormat = regexp.MustCompile(`(?P<client>.*?)\s(?P<identity>.*?)\s(?P<user>.*?)\s\[(?P<timestamp>.*?)\]\s\"(?P<httpmethod>.*?)\s(?P<httpresource>.*?)\s(?P<httpversion>.*?)\"\s(?P<httpstatus>.*?)\s(?P<bytes>.*?)\s\"(?P<referer>.*?)\"\s\"(?P<useragent>.*)\"`)
 
-func checkCLF(logger zerolog.Logger, file string) (int, error) {
+func CheckCLF(logger zerolog.Logger, file string) (int, error) {
 	// We will check for both Common Log Format and Combined Log Format style logs here - both are similar but Combined has two extra fields - referer and user agent
 	// Common Log Format: host ident authuser date "request" status bytes
 	// Combined Log Format: host ident authuser date "request" status bytes "referer" "useragent"
@@ -23,7 +26,7 @@ func checkCLF(logger zerolog.Logger, file string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	scanner, err := scannerFromFile(f)
+	scanner, err := helpers.ScannerFromFile(f)
 	if err != nil {
 		return -1, err
 	}
@@ -49,10 +52,10 @@ func checkCLF(logger zerolog.Logger, file string) (int, error) {
 	}
 }
 
-func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, format int) error {
+func ParseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, format int) error {
 	commonHeaders := []string{"CLIENT", "ID", "USER", "TIMESTAMP", "METHOD", "RESOURCE", "VERSION", "STATUS", "BYTES"}
 	combinedHeaders := []string{"REFERER", "USER AGENT"}
-	inputF, err := openInput(inputFile)
+	inputF, err := helpers.OpenInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
 		return err
@@ -64,9 +67,9 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 	}
 
 	if !tempArgs["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
-	outputF, err := createOutput(outputFile)
+	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		return err
 	}
@@ -77,24 +80,24 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	recordChannel := make(chan []string)
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
 	dateindex := -1
 	if tempArgs["datecol"].(string) != "" {
 		// Should just set this to fixed '3' since it always is
-		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
+		dateindex = helpers.FindTargetIndexInSlice(headers, "TIMESTAMP")
 	}
 	// TODO - Allow IP address column specification
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
-	scanner, err := scannerFromFile(inputF)
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
+	scanner, err := helpers.ScannerFromFile(inputF)
 	if err != nil {
 		return err
 	}
@@ -108,7 +111,7 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if scanErr != nil {
@@ -131,14 +134,14 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -146,8 +149,8 @@ func parseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-	closeChannelWhenDone(recordChannel, &fileWG)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, 0, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
 }

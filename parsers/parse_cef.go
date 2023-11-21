@@ -1,7 +1,10 @@
-package main
+package parsers
 
 import (
 	"encoding/csv"
+	"github.com/joeavanzato/logboost/helpers"
+	"github.com/joeavanzato/logboost/lbtypes"
+	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -21,7 +24,7 @@ var cef_syslog_rfc3164_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<timestamp
 var cef_syslog_rfc5424_rex = regexp.MustCompile(`(?P<pri><\d{1,5}>)(?P<version>\d{1})\s(?P<timestamp>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(?:<.+>\s){0,1}(?P<syshost>.*?)\s(?P<CEFALL>CEF.*)`)
 var cef_syslog_generic = regexp.MustCompile(`^(?P<timestamp>[a-zA-Z]{3}\s{1,3}\d{1,2}\s\d{1,2}:\d{2}:\d{2})\s(?:<.+>\s){0,1}(?P<source>.*?)\s(?P<proc>.*?)\[{0,1}(?P<procid>\d{0,6})\]{0,1}:\s(?P<CEFALL>CEF.*)`)
 
-func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, []string, int, error) {
+func CheckCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string, []string, int, error) {
 	// Determines if a file is CEF - if so, returns all possible headers
 	// Unfortunately, CEF files can have a variable number of key-value pairs - this means that to properly parse to CSV, we have to scan the entire file first to find all possible headers then go back and re-scan for actual content ingestion.
 	// the control variable 'fullParse' determines whether we will do this full-scan or not
@@ -55,7 +58,7 @@ func checkCEF(logger zerolog.Logger, inputFile string, fullParse bool) ([]string
 	}
 	logFormat := -1
 	cefExtensionKeys := make([]string, 0)
-	scanner, err := scannerFromFile(f)
+	scanner, err := helpers.ScannerFromFile(f)
 	if err != nil {
 		return make([]string, 0), cefExtensionKeys, logFormat, nil
 	}
@@ -146,15 +149,15 @@ func getExtensionKeys(headers []string, input string) ([]string, map[string]stri
 		keymap[key] = value
 	}
 	for k := range keymap {
-		if findTargetIndexInSlice(headers, k) == -1 {
+		if helpers.FindTargetIndexInSlice(headers, k) == -1 {
 			headers = append(headers, k)
 		}
 	}
 	return headers, keymap
 }
 
-func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, cefKeys []string) error {
-	inputF, err := openInput(inputFile)
+func ParseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullParse bool, headers []string, logFormat int, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, arguments map[string]any, tempArgs map[string]any, cefKeys []string) error {
+	inputF, err := helpers.OpenInput(inputFile)
 	defer inputF.Close()
 	if err != nil {
 		return err
@@ -162,9 +165,9 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	// TODO - Sort
 	//sort.Sort(sort.StringSlice(headers))
 	if !tempArgs["passthrough"].(bool) {
-		headers = append(headers, geoFields...)
+		headers = append(headers, vars.GeoFields...)
 	}
-	outputF, err := createOutput(outputFile)
+	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		return err
 	}
@@ -174,24 +177,24 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 		logger.Error().Msg(err.Error())
 		return err
 	}
-	var fileWG WaitGroupCount
+	var fileWG lbtypes.WaitGroupCount
 	recordChannel := make(chan []string)
 	maxRoutinesPerFile := arguments["maxgoperfile"].(int)
 	lineBatchSize := arguments["batchsize"].(int)
-	jobTracker := runningJobs{
+	jobTracker := lbtypes.RunningJobs{
 		JobCount: 0,
-		mw:       sync.RWMutex{},
+		Mw:       sync.RWMutex{},
 	}
 	records := make([][]string, 0)
 	dateindex := -1
 	if tempArgs["datecol"].(string) != "" {
-		dateindex = findTargetIndexInSlice(headers, "TIMESTAMP")
+		dateindex = helpers.FindTargetIndexInSlice(headers, "TIMESTAMP")
 	}
-	ipAddressColumn := findTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
+	ipAddressColumn := helpers.FindTargetIndexInSlice(headers, arguments["IPcolumn"].(string))
 
-	var writeWG WaitGroupCount
-	go listenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
-	scanner, err := scannerFromFile(inputF)
+	var writeWG lbtypes.WaitGroupCount
+	go helpers.ListenOnWriteChannel(recordChannel, writer, logger, outputF, arguments["writebuffer"].(int), &writeWG)
+	scanner, err := helpers.ScannerFromFile(inputF)
 	if err != nil {
 		return err
 	}
@@ -205,7 +208,7 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 		if scanErr == io.EOF {
 			fileWG.Add(1)
 			jobTracker.AddJob()
-			go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+			go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			records = nil
 			break
 		} else if scanErr != nil {
@@ -228,14 +231,14 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 					} else {
 						fileWG.Add(1)
 						jobTracker.AddJob()
-						go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+						go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 						break waitForOthers
 					}
 				}
 			} else {
 				fileWG.Add(1)
 				jobTracker.AddJob()
-				go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+				go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
 			}
 			records = nil
 		}
@@ -243,8 +246,8 @@ func parseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	}
 	fileWG.Add(1)
 	jobTracker.AddJob()
-	go processRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
-	closeChannelWhenDone(recordChannel, &fileWG)
+	go helpers.ProcessRecords(logger, records, asnDB, cityDB, countryDB, domainDB, ipAddressColumn, -1, true, arguments["dns"].(bool), recordChannel, &fileWG, &jobTracker, tempArgs, dateindex)
+	helpers.CloseChannelWhenDone(recordChannel, &fileWG)
 	writeWG.Wait()
 	return nil
 }
@@ -255,7 +258,7 @@ func buildRecord(cefExtensions string, headers []string, record []string, cefHea
 	tempCefRecord := make([]string, len(cefHeaders))
 
 	for k, v := range keymap {
-		headerIndex := findTargetIndexInSlice(cefHeaders, k)
+		headerIndex := helpers.FindTargetIndexInSlice(cefHeaders, k)
 		if headerIndex == -1 {
 			// Error - could not find a key in the headers so we will skip it - should never happen since we use the same parsing logic both runs.
 			continue
