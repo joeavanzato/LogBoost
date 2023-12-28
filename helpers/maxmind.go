@@ -147,9 +147,11 @@ func SetAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 			_, err := os.Stat("mm_api.txt")
 			if os.IsNotExist(err) {
 				logger.Error().Msgf("Could not find mm_api.txt - downloads not possible.")
+			} else {
+				logger.Info().Msgf("Found mm_api.txt")
+				// TODO - If mm_api.txt exists but has no contents - avoid bug here
+				apiKey = FileToSlice("mm_api.txt", logger)[0]
 			}
-			logger.Info().Msgf("Found mm_api.txt")
-			apiKey = FileToSlice("mm_api.txt", logger)[0]
 		}
 	} else {
 		logger.Info().Msgf("Reading API Key from provided commandline")
