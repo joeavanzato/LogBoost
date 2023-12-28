@@ -515,7 +515,8 @@ func main() {
 	//makeTorList(arguments, logger)
 	APIerr := helpers.SetAPIUrls(arguments, logger)
 	Finderr := helpers.FindOrGetDBs(arguments, logger)
-	if APIerr != nil && Finderr != nil {
+	if APIerr != nil && Finderr != nil && !arguments["passthrough"].(bool) {
+		// We could not find an API key, could not find existing DBs and did not specify that we are doing a 'passthrough' execution
 		return
 	}
 
