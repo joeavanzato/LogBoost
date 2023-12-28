@@ -16,6 +16,8 @@ On top of this, LogBoost can download text-based threat intelligence as configur
 
 All in - LogBoost can convert a variety of log formats to CSV while enriching IP addresses with Country, ASN, City, Domains and Indicator Information.
 
+**Wiki: https://github.com/joeavanzato/LogBoost/wiki**
+
 ### Common Usecases
 * Enriching and combining a log directory containing thousands of similarly-structured files (WebServer logs, Cloudtrail dumps, Firewall exports, etc)
 * Converting JSON Lines/Multi-line JSON blobs into more easily filterable CSVs 
@@ -27,7 +29,7 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 
 ### Example Usage
 
-To use, just download the latest release binary (along with feed_config.json if you wish to enhance results with threat intelligence.  Additionally, setup a free MaxMind account at https://www.maxmind.com/en/geolite2/signup?utm_source=kb&utm_medium=kb-link&utm_campaign=kb-create-account to get a license key for the free GeoLite2 Databases.  Once that key is acquired, you can either put it in an environment variable (MM_API), put it in a file in the CWD (mm_api.txt) or provide it at the command-line via the flat '-api'.
+To use, just download the latest release binary (along with feed_config.json if you wish to enhance results with threat intelligence.  Additionally, setup a free MaxMind account at https://www.maxmind.com/en/geolite2/signup?utm_source=kb&utm_medium=kb-link&utm_campaign=kb-create-account to get a license key for the free GeoLite2 Databases.  Once that key is acquired, you can either put it in an environment variable (MM_API), put it in a file in the CWD (mm_api.txt) or provide it at the command-line via the flag '-api'.
 
 #### Common Use
 * ```LogBoost.exe -buildti``` - Build the Threat Indicator database locally (only needed once)
