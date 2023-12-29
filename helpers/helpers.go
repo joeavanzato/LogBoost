@@ -469,9 +469,13 @@ func CombineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 			logger.Error().Msg(err.Error())
 			continue
 		}
+
+		headers = append(headers, "SourceFile")
+
 		writer := csv.NewWriter(outputF)
+
 		writer.Write(headers)
-		// Now we have created an output CSV and written the headers from the first file to it - for each file we will kick off a gorroutine that will read and send records to the writer channel
+		// Now we have created an output CSV and written the headers from the first file to it - for each file we will kick off a goroutine that will read and send records to the writer channel
 		// Once all readers are done, the waitgroup will be done and the per-file channel will be closed
 		// Once all per-file channels are closed, are independent writers will finish and signal that the main wait group is done and we can proceed with execution
 
@@ -636,6 +640,8 @@ func readAndSendToChannel(csvFile string, c chan []string, waiter *lbtypes.WaitG
 			continue
 		}
 		record = resortRecord(record, newIndexOrder, initialHeaders)
+		// Setting last element of record to the SourceFile column so we can understand which results come from which files when combining results
+		record[len(initialHeaders)-1] = csvFile
 		c <- record
 	}
 }
