@@ -345,7 +345,6 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, "", "")
 	} else {
 		//ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
-		record = append(record, tmpAsn.AutonomousSystemOrganization)
 		record = append(record, tmpAsn.AutonomousSystemOrganization, strconv.FormatUint(uint64(tmpAsn.AutonomousSystemNumber), 10))
 		if slices.Contains(vars.DataCenterASNNumbers, strconv.FormatUint(uint64(tmpAsn.AutonomousSystemNumber), 10)) {
 			isDataCenter = true
