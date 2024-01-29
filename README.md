@@ -171,7 +171,7 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 -convert [bool] (default=false) - Tells LogBoost to look for .log/.txt files in the specified log directory in addition to CSV then attempts to read them in one of a few ways
 -rawtxt [bool] - Handle any identified .txt/.log file as raw text if parser is not identified - should be used with -convert.
 -fullparse [bool] - Specify to perform 'deep' key detection on file formats with variable columns such as CSVs with JSON Blobs, CEF, JSON, etc - will increase processing time since we have to read the whole file twice basically.
- -getall [bool] - Look for any file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
+-getall [bool] - Look for any file in input directory and process as raw text if a parser is not identified - similar to '-rawtxt -convert' but also gets files without extensions or files that do not have .txt/.log extension.
  
 -separator [string] (default="=") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the separator would be '='
 -delimiter [string] (default=",") - Used when -convert is specified to try and parse kv style logging.  Example - if log is in format k1=v1,k2=v2 then the delimiter would be ','
@@ -191,8 +191,9 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 -updateti [bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
 -includedc [bool] (default=false) - When using -updateti, if this is also specified LogBoost will download and expand a lsit of known DataCenter IP addresses for use in enrichment.
 -useti [bool] (default=false) - Use the threat intelligence database if it exists
--intelfile [string] - Specify the path to an intelligence file to ingest into the threat DB (must use with -inteltype)
--inteltype [string] - Specify the type to appear when there is a match on custom-ingested ingelligence (must use with -intelfile)
+-intelfile [string] - Specify the path to an intelligence file to ingest into the threat DB (must use with -inteltype and -intelname)
+-inteltype [string] - Specify the type to appear when there is a match on custom-ingested ingelligence (must use with -intelfile and -intelname)
+-intelname [string] - Specify the name to appear when there is a match on custom-ingested ingelligence (must use with -intelfile and -inteltype)
 -summarizeti [bool] - Summarize the existing threat database
 
 -startdate [string] - Start date of data to parse - defaults to year 1800.  Can be used with or without enddate.
