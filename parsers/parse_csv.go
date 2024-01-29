@@ -147,6 +147,8 @@ func ProcessCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			if extraIndex != -1 {
 				record = append(record, tmpExtra)
 			}
+		} else if jsonColumn != -1 {
+			record = append(record, "")
 		}
 		records = append(records, record)
 
