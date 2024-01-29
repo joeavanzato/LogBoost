@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -767,4 +768,17 @@ func getCSVHeaders(csvFile string) ([]string, error) {
 		return make([]string, 0), err
 	}
 	return headers, nil
+}
+
+func deduplicateStringSlice(strSlice []string) []string {
+	allKeys := make(map[string]bool)
+	list := []string{}
+	for _, item := range strSlice {
+		if _, value := allKeys[item]; !value {
+			allKeys[item] = true
+			list = append(list, item)
+		}
+	}
+	sort.Strings(list)
+	return list
 }
