@@ -52,7 +52,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	fullparse := flag.Bool("fullparse", false, "If specified, will scan entire files for all possible keys to use in CSV rather than generalizing messages into an entire column - increases processing time.  Use to expand JSON blobs inside columnar data with -jsoncol to provide the name of the column.")
 	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
 	passthrough := flag.Bool("passthrough", false, "Skip all enrichment steps - only perform log conversion to CSV")
-
+	includedc := flag.Bool("includedc", false, "Include datacenter list for Threat Intelligence enrichment - will add approximately ~129 million IP addresses to the DB (~2.7 GB on disk)")
 	flag.Parse()
 
 	if *getall {
@@ -466,6 +466,9 @@ func main() {
 			return
 		}
 		helpers.UpdateVPNList(logger)
+		if arguments["includedc"].(bool) {
+			helpers.UpdateDCList(logger)
+		}
 		helpers.SummarizeThreatDB(logger)
 		return
 	}
