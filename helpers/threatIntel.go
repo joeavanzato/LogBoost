@@ -335,7 +335,7 @@ func InsertCategory(category string, db *sql.DB) error {
 	return nil
 }
 
-func CheckIPinTI(ip string, db *sql.DB) (string, string, string, bool, error) {
+func CheckIPinTI(ip string, isDataCenter bool, db *sql.DB) (string, string, string, bool, error) {
 	query := fmt.Sprintf("select feeds.feed_name,categories.category_value from ips INNER JOIN categories ON ips.category = categories.category_id INNER JOIN feeds ON ips.feed = feeds.feed_id where ip=\"%v\"", ip)
 	rows, err := db.Query(query)
 	if err != nil {
