@@ -90,6 +90,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"fullparse":       *fullparse,
 		"updategeo":       *updategeo,
 		"passthrough":     *passthrough,
+		"includedc":       *includedc,
 	}
 
 	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {
@@ -473,13 +474,15 @@ func main() {
 		return
 	}
 	if arguments["intelfile"].(string) != "" {
+		// TODO - Fix this to work with new schema system
 		db, err := helpers.OpenDBConnection(logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return
 		}
 		if helpers.DoesFileExist(arguments["intelfile"].(string)) {
-			err = helpers.IngestFile(arguments["intelfile"].(string), arguments["inteltype"].(string), "", db, logger)
+			// TODO  - Ingest custom intel feed/category if new
+			err = helpers.IngestFile(arguments["intelfile"].(string), arguments["inteltype"].(string), 1, db, logger)
 			if err != nil {
 				logger.Error().Msg(err.Error())
 				return
