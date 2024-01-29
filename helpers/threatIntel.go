@@ -268,13 +268,12 @@ func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
 	return "", false, err
 }
 
-func UpdateVPNList(logger zerolog.Logger) {
-	url := "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt"
-	file := "vpn_full_feed_X4BNet.txt"
+func IngestIPNetLists(url string, name string, file string, listtype string, category string, logger zerolog.Logger) {
+
 	dest := fmt.Sprintf("%v\\%v", intelDir, file)
 	dlerr := DownloadFile(logger, url, dest, "")
 	if dlerr != nil {
-		logger.Error().Msgf("Error Updating VPN List: %v", dlerr.Error())
+		logger.Error().Msgf("Error Updating %v List: %v", listtype, dlerr.Error())
 		return
 	}
 	ipList := FileToSlice(dest, logger)
@@ -283,12 +282,15 @@ func UpdateVPNList(logger zerolog.Logger) {
 		logger.Error().Msg(dberr.Error())
 		return
 	}
+	err := InsertCategory(category, db)
+	err, feed_id := InsertFeed(name, url, db)
+
 	tx, err := db.Begin()
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return
 	}
-	stmt, err := tx.Prepare("insert or ignore into ips(ip, category) values(?, ?)")
+	stmt, err := tx.Prepare("insert or ignore into ips(ip, feed, category) values(?, ?, ?)")
 	if err != nil {
 		logger.Error().Msg(err.Error())
 		return
@@ -301,7 +303,7 @@ func UpdateVPNList(logger zerolog.Logger) {
 			continue
 		}
 		for ip := gen.Next(); ip != nil; ip = gen.Next() {
-			ingestRecord(ip.String(), "vpn", stmt, logger)
+			ingestRecord(ip.String(), CategoryMap[category], feed_id, stmt, logger)
 		}
 	}
 	err = tx.Commit()
@@ -309,6 +311,21 @@ func UpdateVPNList(logger zerolog.Logger) {
 		logger.Error().Msg(err.Error())
 		return
 	}
+}
+
+func UpdateDCList(logger zerolog.Logger) {
+	url := "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/datacenter/ipv4.txt"
+	name := "dc_full_feed_X4BNet"
+	file := "dc_full_feed_X4BNet.txt"
+	IngestIPNetLists(url, name, file, "Datacenter", "dc", logger)
+}
+
+func UpdateVPNList(logger zerolog.Logger) {
+	url := "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/output/vpn/ipv4.txt"
+	name := "vpn_full_feed_X4BNet"
+
+	file := "vpn_full_feed_X4BNet.txt"
+	IngestIPNetLists(url, name, file, "VPN", "vpn", logger)
 
 }
 
