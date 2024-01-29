@@ -18,13 +18,15 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 
 **Wiki: https://github.com/joeavanzato/LogBoost/wiki**
 
-### Common Usecases
+**QuickStart: https://github.com/joeavanzato/LogBoost/wiki/Quick-Start-Guide**
+
+### Common Use Cases
 * Enriching and combining a log directory containing thousands of similarly-structured files (WebServer logs, Cloudtrail dumps, Firewall exports, etc)
 * Converting JSON Lines/Multi-line JSON blobs into more easily filterable CSVs 
 * Parsing KV-pair logging, such as Firewall dumps (k1=v1,k2=v2, etc)
 * Parsing CEF-style logging, from Syslog or otherwise, into CSV
 * Finding suspicious IP addresses in any inspected file through threat indicator matching
-* Enriching IP addresses to find associated domain names and geo-locations in any inspected file
+* Enriching IP addresses to find associated domain names and geolocations in any inspected file
 
 
 ### Example Usage
@@ -32,9 +34,10 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 To use, just download the latest release binary (along with feed_config.json if you wish to enhance results with threat intelligence.  Additionally, setup a free MaxMind account at https://www.maxmind.com/en/geolite2/signup?utm_source=kb&utm_medium=kb-link&utm_campaign=kb-create-account to get a license key for the free GeoLite2 Databases.  Once that key is acquired, you can either put it in an environment variable (MM_API), put it in a file in the CWD (mm_api.txt) or provide it at the command-line via the flag '-api'.
 
 #### Common Use
-* ```LogBoost.exe -buildti``` - Build the Threat Indicator database locally (only needed once)
+* ```LogBoost.exe -buildti``` - Build the Threat Indicator database locally - will also update the feed.
 * ```LogBoost.exe -updateti``` - Update the Threat Indicator database - run periodically to get new indicators.
-* ```LogBoost.exe -logdir logs -regex -api XXX``` - Enrich a directory containing one or more CSV files with Geolocation inforrmation
+* ```LogBoost.exe -updateti -includedc``` - Update the Threat Indicator database and also include datacenter IP addresses - this will add approximately ~129 million IPs consuming approximately 7 GB of space on disk.  This is typically not necessary as LogBoost also contains a built-in list of ASN Numbers derived from 
+* ```LogBoost.exe -logdir logs -regex -api XXX``` - Enrich a directory containing one or more CSV files with Geolocation information
 
 
 * ```LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse``` - Enrich any CSV file within 'input' while also expanding JSOB blobs located in the column named 'data' - the enriched IP address will be pulled from the column named 'client'.
@@ -186,6 +189,7 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 
 -buildti [bool] (default=false) - Build the threat intelligence database based on feed_config.json
 -updateti [bool] (default=false) - Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json
+-includedc [bool] (default=false) - When using -updateti, if this is also specified LogBoost will download and expand a lsit of known DataCenter IP addresses for use in enrichment.
 -useti [bool] (default=false) - Use the threat intelligence database if it exists
 -intelfile [string] - Specify the path to an intelligence file to ingest into the threat DB (must use with -inteltype)
 -inteltype [string] - Specify the type to appear when there is a match on custom-ingested ingelligence (must use with -intelfile)
@@ -200,9 +204,11 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 ### Threat Intelligence Notes
 LogBoost is capable of downloading and normalizing configurable text-based threat indicator feeds to a single SQLite DB and using this DB to enrich records during processing based on the 'type' of intelligence it was ingested as.
 
-Over 90 opensource feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to download fresh copies of intelligence and ingest it into the existing databnase - old data is **not** deleted and IPs are treated as a unique column.  Therefore, an IP will only exist based on the first type/url that it is ingested as.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.
+Over 90 open-source feeds are included by default - when the 'buildti' flag is used, the database is initialized for the first time - this is only required once.  Subsequently, the 'updateti' flag can be used to download fresh copies of intelligence and ingest it into the existing database.  This is not designed to be a TIP but rather a quick reference for hunting suspicious activity in logs.  
 
-Include the 'useti' flag to actually use the database during enrichment processes - there is a minor efficiency hit but it is typically negligble - if only geolocation is required, then there is no need to use this feature.
+When using '-updateti', if '-includedc' is used, an additional list of DataCenter IP addresses will be added to the DB - this will consume approximately ~7 GB of disk space and add ~129 million IP addresses.  This is typically not necessary since LogBoost also includes a list of ASN Numbers that correspond to datacenters as sourced from https://github.com/X4BNet/lists_vpn/blob/main/input/datacenter/ASN.txt which is used to determine if any particular IP address belongs to a datacenter.
+
+Include the 'useti' flag to actually use the database during enrichment processes - there is a minor efficiency hit, but it is typically negligble - if only geolocation is required, then there is no need to use this feature.
 
 Adding custom text-based files to the underlying database can be achieved using the -intelfile and -inteltype flags together.
 
