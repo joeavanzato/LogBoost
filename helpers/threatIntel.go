@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,14 +33,21 @@ type threatsCatReport struct {
 	count    int
 }
 
+type iPCheckResults struct {
+	feed_name string
+	category  string
+}
+
+var CategoryMap = make(map[string]int) // Maps Intel Category string to corresponding RowID in DB
+
 func SummarizeThreatDB(logger zerolog.Logger) {
 	db, err := OpenDBConnection(logger)
-	logger.Info().Msg("Summarized ThreatDB Info")
+	logger.Info().Msg("Summarizing ThreatDB Info")
 	if err != nil {
 		logger.Error().Msg("Could not initialize access to threat DB!")
 		return
 	}
-	query := "SELECT COUNT(*) as c FROM ips"
+	query := "SELECT COUNT(DISTINCT(ip)) as c FROM ips"
 	rows, err := db.Query(query)
 	if err != nil {
 		return
@@ -51,7 +59,7 @@ func SummarizeThreatDB(logger zerolog.Logger) {
 	rows.Close()
 	logger.Info().Msgf("Total Unique IPs: %v", ipCount)
 
-	query_types := "SELECT category, COUNT(*) as count FROM ips GROUP BY category"
+	query_types := "SELECT categories.category_value, COUNT(*) as count FROM ips INNER JOIN categories ON ips.category = categories.category_id GROUP BY category"
 	rows_types, err := db.Query(query_types)
 	if err != nil {
 		return
@@ -61,7 +69,7 @@ func SummarizeThreatDB(logger zerolog.Logger) {
 		if err := rows_types.Scan(&tmp.category, &tmp.count); err != nil {
 			return
 		}
-		logger.Info().Msgf("Category %v: %v", tmp.category, tmp.count)
+		logger.Info().Msgf("%v: %v", tmp.category, tmp.count)
 	}
 }
 
@@ -144,10 +152,29 @@ func initializeThreatDB(logger zerolog.Logger) error {
 	file.Close()
 	db, _ := sql.Open("sqlite3", ThreatDBFile)
 	defer db.Close()
-	createTableStatement := `CREATE TABLE ips ("ip" TEXT PRIMARY KEY, "category" TEXT, UNIQUE(ip)) WITHOUT ROWID;`
-	_, exeE := db.Exec(createTableStatement)
+	//createIOCTable := `CREATE TABLE ips ("ip" TEXT PRIMARY KEY, "category" TEXT, "feed_count" INT, ids TEXT, UNIQUE(ip)) WITHOUT ROWID;`
+	createIOCTable := `CREATE TABLE ips ("ip" TEXT, "feed" INTEGER, "category" INTEGER, UNIQUE(ip, feed, category));`
+	err := createDBTable(logger, createIOCTable, db)
+	if err != nil {
+		return err
+	}
+	createFeedTable := `CREATE TABLE feeds ("feed_id" INTEGER PRIMARY KEY, "feed_url" TEXT,"feed_name" TEXT, UNIQUE(feed_name));`
+	err = createDBTable(logger, createFeedTable, db)
+	if err != nil {
+		return err
+	}
+	createCategoryTable := `CREATE TABLE categories ("category_id" INTEGER PRIMARY KEY, "category_value" TEXT, UNIQUE(category_value));`
+	err = createDBTable(logger, createCategoryTable, db)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func createDBTable(logger zerolog.Logger, statement string, db *sql.DB) error {
+	_, exeE := db.Exec(statement)
 	if exeE != nil {
-		logger.Error().Msg(CreateErr.Error())
+		logger.Error().Msg(exeE.Error())
 		return exeE
 	}
 	return nil
@@ -190,15 +217,15 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 		baseNameWithoutExtension := strings.TrimSuffix(filepath.Base(e.Name()), filepath.Ext(e.Name()))
 		_, exist := typeMap[baseNameWithoutExtension]
 		if !exist {
-			// Indicates the file is not one we downloaded in this process - some exterrnal intel or something else.
+			// Indicates the file is not one we downloaded in this process - some external intel or something else.
 			continue
 		}
-		err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
+		//err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
+		err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), strings.Join(typeMap[baseNameWithoutExtension], ","), feedidMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
 	}
-
 	return nil
 }
 
@@ -245,46 +272,110 @@ func IngestFile(inputFile string, categories string, feedid int, db *sql.DB, log
 	return nil
 }
 
-func ingestRecord(ip string, category string, stmt *sql.Stmt, logger zerolog.Logger) {
-	if ip != "" && category != "" {
-		_, err := stmt.Exec(ip, category)
+func ingestRecord(ip string, category int, feed int, stmt *sql.Stmt, logger zerolog.Logger) {
+	if ip != "" && category != 0 && feed != 0 {
+		_, err := stmt.Exec(ip, feed, category)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
 	}
-
 }
 
-func CheckIPinTI(ip string, db *sql.DB) (string, bool, error) {
-	query := fmt.Sprintf("select category from ips where ip = \"%v\"", ip)
-	/*	stmt, err := db.Prepare(query)
-		if err != nil {
-			return "", false
-		}
-		defer stmt.Close()
-		r, err := stmt.Exec()
-		if err != nil {
-			return "", false
-		}*/
+func GetFeedIDIfExist(feed_name string, db *sql.DB) int {
+	query := fmt.Sprintf("select feed_id from feeds where feed_name = \"%v\"", feed_name)
+	rows, err := db.Query(query)
+	defer rows.Close()
+	if err != nil {
+		return 0
+	}
+	for rows.Next() {
+		var id int
+		err = rows.Scan(&id)
+		return id
+	}
+	return 0
+}
+
+func InsertFeed(feed_name string, feed_url string, db *sql.DB) (error, int) {
+
+	feed_id := GetFeedIDIfExist(feed_name, db)
+	if feed_id != 0 {
+		return nil, feed_id
+	}
+	tx, _ := db.Begin()
+	stmt, _ := tx.Prepare("insert or ignore into feeds(feed_url, feed_name) values(?, ?)")
+	_, cerr := stmt.Exec(feed_url, feed_name)
+	if cerr != nil {
+		return cerr, 0
+	}
+	tx.Commit()
+	feed_id = GetFeedIDIfExist(feed_name, db)
+	if feed_id != 0 {
+		return nil, feed_id
+	}
+	return nil, 0
+}
+
+func InsertCategory(category string, db *sql.DB) error {
+	tx, _ := db.Begin()
+	stmt, _ := tx.Prepare("insert or ignore into categories(category_value) values(?)")
+	_, cerr := stmt.Exec(category)
+	if cerr != nil {
+		return cerr
+	}
+	tx.Commit()
+	query := fmt.Sprintf("select category_id from categories where category_value = \"%v\"", category)
+	rows, err := db.Query(query)
+	defer rows.Close()
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id int
+		err = rows.Scan(&id)
+		CategoryMap[category] = id
+	}
+	return nil
+}
+
+func CheckIPinTI(ip string, db *sql.DB) (string, string, string, bool, error) {
+	query := fmt.Sprintf("select feeds.feed_name,categories.category_value from ips INNER JOIN categories ON ips.category = categories.category_id INNER JOIN feeds ON ips.feed = feeds.feed_id where ip=\"%v\"", ip)
 	rows, err := db.Query(query)
 	if err != nil {
-		return "", false, err
+		return "", "", "", false, err
 	}
 	defer rows.Close()
+	categories := make([]string, 0)
+	feed_names := make([]string, 0)
 	for rows.Next() {
-		var iptype string
-		err = rows.Scan(&iptype)
-		if err != nil {
-			return "", false, err
+		results := iPCheckResults{
+			feed_name: "",
+			category:  "",
 		}
-		return iptype, true, nil
+		err = rows.Scan(&results.feed_name, &results.category)
+		if err != nil {
+			return "", "", "", false, err
+		}
+		categories = append(categories, results.category)
+		feed_names = append(feed_names, results.feed_name)
+		//return iptype, true, nil
 	}
+	categories = deduplicateStringSlice(categories)
+	feed_names = deduplicateStringSlice(feed_names)
+	if len(feed_names) == 0 {
+		return "", "", "", false, err
+	}
+	feed_count := len(feed_names)
+	feeds := strings.Join(feed_names, "|")
+	cats := strings.Join(categories, "|")
+	//fmt.Println(feed_count, feeds, cats)
+
 	err = rows.Err()
 	if err != nil {
-		return "", false, err
+		return "", "", "", false, err
 	}
 
-	return "", false, err
+	return cats, feeds, strconv.Itoa(feed_count), true, nil
 }
 
 func IngestIPNetLists(url string, name string, file string, listtype string, category string, logger zerolog.Logger) {
