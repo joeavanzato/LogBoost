@@ -398,15 +398,28 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, "")
 	}
 
+	if vars.MaxMindStatus["Domain"] {
+		tmpDomain := lbtypes.Domain{}
+		err := domainDB.Lookup(ip, &tmpDomain)
+		if err != nil {
+			record = append(record, "NA")
+		} else {
+			record = append(record, tmpDomain.Domain)
+		}
+	} else {
+		record = append(record, "NA")
+	}
+
 	if UseIntel {
 		// TODO - Consider setting up in-memory only cache for TI to help speed up if bottlenecks occur
-		matchType, TIexists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
+		categories, feednames, feedcount, TIexists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
+
 		if DBError != nil {
 			//ipTmpStruct.ThreatCat = "NA"
 			record = append(record, "NA")
 		} else if TIexists {
 			//ipTmpStruct.ThreatCat = matchType
-			record = append(record, matchType)
+			record = append(record, categories, feedcount, feednames)
 		} else {
 			//ipTmpStruct.ThreatCat = "none"
 			record = append(record, "none")
@@ -419,17 +432,6 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	/*	if useDNS {
 		AddIP(ipString, ipTmpStruct)
 	}*/
-	if vars.MaxMindStatus["Domain"] {
-		tmpDomain := lbtypes.Domain{}
-		err := domainDB.Lookup(ip, &tmpDomain)
-		if err != nil {
-			record = append(record, "NA")
-		} else {
-			record = append(record, tmpDomain.Domain)
-		}
-	} else {
-		record = append(record, "NA")
-	}
 
 	return record
 }
