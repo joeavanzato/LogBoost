@@ -23,9 +23,9 @@ type Feeds struct {
 	Feeds []Feed `json:"feeds"`
 }
 type Feed struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-	Type string `json:"type"`
+	Name string   `json:"name"`
+	URL  string   `json:"url"`
+	Type []string `json:"type"`
 }
 type threatsCatReport struct {
 	category string
@@ -160,16 +160,28 @@ func OpenDBConnection(logger zerolog.Logger) (*sql.DB, error) {
 
 func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	logger.Info().Msg("Ingesting Intelligence Feeds...")
-	typeMap := make(map[string]string)
-	urlMap := make(map[string]string)
+	typeMap := make(map[string][]string)
+	feedidMap := make(map[string]int)
 	db, err := OpenDBConnection(logger)
 	if err != nil {
 		return err
 	}
 	for i := 0; i < len(feeds.Feeds); i++ {
+		for _, j := range feeds.Feeds[i].Type {
+			cat_err := InsertCategory(j, db)
+			if cat_err != nil {
+				logger.Error().Msg(cat_err.Error())
+			}
+		}
+		feed_insert_err, feed_id := InsertFeed(feeds.Feeds[i].Name, feeds.Feeds[i].URL, db)
+		if feed_insert_err != nil {
+			logger.Error().Msg(feed_insert_err.Error())
+		}
+
+		feedidMap[feeds.Feeds[i].Name] = feed_id
 		typeMap[feeds.Feeds[i].Name] = feeds.Feeds[i].Type
-		urlMap[feeds.Feeds[i].Name] = feeds.Feeds[i].URL
 	}
+
 	intelFiles, err := os.ReadDir(intelDir)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -190,14 +202,14 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 	return nil
 }
 
-func IngestFile(inputFile string, iptype string, url string, db *sql.DB, logger zerolog.Logger) error {
+func IngestFile(inputFile string, categories string, feedid int, db *sql.DB, logger zerolog.Logger) error {
 	logger.Info().Msgf("Ingesting %v", inputFile)
 	fileLines := FileToSlice(inputFile, logger)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare("insert or ignore into ips(ip, category) values(?, ?)")
+	stmt, err := tx.Prepare("insert or ignore into ips(ip, feed, category) values(?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -216,7 +228,14 @@ func IngestFile(inputFile string, iptype string, url string, db *sql.DB, logger 
 			if IsPrivateIP(ipParse, v) {
 				continue
 			}
-			ingestRecord(v, iptype, stmt, logger)
+			if strings.Contains(categories, ",") {
+				cats := strings.Split(categories, ",")
+				for _, cat := range cats {
+					ingestRecord(v, CategoryMap[cat], feedid, stmt, logger)
+				}
+			} else {
+				ingestRecord(v, CategoryMap[categories], feedid, stmt, logger)
+			}
 		}
 	}
 	err = tx.Commit()
