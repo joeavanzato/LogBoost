@@ -12,9 +12,9 @@ LogBoost can parse and convert a variety of structured and semi-structured log f
 
 The tool can also perform reverse lookups on each IP address detected in the source files to identify currently related domains.  If 'GeoLite2-Domain.mmdb' is detected in the specified MaxMind DB Dir (CWD by default), the associated TLD of the enriched IP address is provided in the output as well.
 
-On top of this, LogBoost can download text-based threat intelligence as configured in feed_config.json and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with the indicator 'type'.
+On top of this, LogBoost can download text-based threat intelligence as configured in feed_config.json and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with indicator matches.
 
-All in - LogBoost can convert a variety of log formats to CSV while enriching IP addresses with Country, ASN, City, Domains and Indicator Information.
+All in - LogBoost can convert a variety of log formats to CSV while enriching IP addresses with ASN Org/Number, Country, City, Domains and Indicator Match Information.
 
 **Wiki: https://github.com/joeavanzato/LogBoost/wiki**
 
@@ -34,16 +34,16 @@ All in - LogBoost can convert a variety of log formats to CSV while enriching IP
 To use, just download the latest release binary (along with feed_config.json if you wish to enhance results with threat intelligence.  Additionally, setup a free MaxMind account at https://www.maxmind.com/en/geolite2/signup?utm_source=kb&utm_medium=kb-link&utm_campaign=kb-create-account to get a license key for the free GeoLite2 Databases.  Once that key is acquired, you can either put it in an environment variable (MM_API), put it in a file in the CWD (mm_api.txt) or provide it at the command-line via the flag '-api'.
 
 #### Common Use
-* ```LogBoost.exe -buildti``` - Build the Threat Indicator database locally - will also update the feed.
-* ```LogBoost.exe -updateti``` - Update the Threat Indicator database - run periodically to get new indicators.
-* ```LogBoost.exe -updateti -includedc``` - Update the Threat Indicator database and also include datacenter IP addresses - this will add approximately ~129 million IPs consuming approximately 7 GB of space on disk.  This is typically not necessary as LogBoost also contains a built-in list of ASN Numbers derived from 
-* ```LogBoost.exe -logdir logs -regex -api XXX``` - Enrich a directory containing one or more CSV files with Geolocation information
+* ```LogBoost.exe -buildti``` - Build the Threat Indicator database locally - will also update all configured feeds.
+* ```LogBoost.exe -updateti``` - Update the Threat Indicator database - run periodically to ingest new indicators from configured feeds.
+* ```LogBoost.exe -updateti -includedc``` - Update the Threat Indicator database and also include datacenter IP addresses - this will add approximately ~129 million IPs consuming approximately 7 GB of space on disk.  This is typically not necessary as LogBoost also contains a built-in list of ASN Numbers derived from https://raw.githubusercontent.com/X4BNet/lists_vpn/main/input/datacenter/ASN.txt
+* ```LogBoost.exe -logdir logs -regex -api XXX``` - Enrich a directory containing one or more CSV files with Geolocation information, using regex to find the first non-private IP address in each row
 
 
-* ```LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse``` - Enrich any CSV file within 'input' while also expanding JSOB blobs located in the column named 'data' - the enriched IP address will be pulled from the column named 'client'.
+* ```LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse``` - Enrich any CSV file within 'input' while also expanding JSON blobs located in the column named 'data' - the enriched IP address will be pulled from the column named 'client'.
 * ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex``` - Same as above but use regex to find the first non-private IP address.
-* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex -useti``` - Same as above but also use the threat indicator db.
-* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex -useti -dns``` - Same as above but also do live DNS lookups.
+* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex -useti``` - Same as above but also use the threat indicator db to enrich with IP matches.
+* ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex -useti -dns``` - Same as above but also do live DNS lookups on each IP address to find any associated domains.
 
 
 * ```LogBoost.exe -logdir logs -convert -rawtxt``` - Process all .csv/.log/.txt files in 'logs' - look for relevant parsers or parse as raw text as last resort.
@@ -52,7 +52,7 @@ To use, just download the latest release binary (along with feed_config.json if 
 
 * ``` LogBoost.exe -logdir logs -maxgoperfile 40 -batchsize 100 -writebuffer 2000 -concurrentfiles 1000``` - Process up to 1k concurrent files with 40 'threads' per file, each thread handling 100 records and the writer for each output buffering 2000 records at a time.
 
-* ```LogBoost.exe -logdir logs -convert -dns -useti -regex -combine ``` Look for all logs inside 'logs' and enrich regexed IPs with Threat Indicators and DNS, combining all output files into a single CSV.
+* ```LogBoost.exe -logdir logs -convert -dns -useti -regex -combine ``` Look for all .csv/.log/.txt files inside 'logs' and enrich regexed IPs with Threat Indicators and DNS, combining all output files into a single CSV if a parser for the format is detected.
 
 * ```LogBoost.exe  -convert -logdir iislogs -startdate 01/01/2023 -datecol date -dateformat 2006-01-02 -convert -enddate 01/04/2023``` - Parse and Convert logs storing date in a column/key named 'date' with a format as specified between the specified dates (inclusive ranging)
 
@@ -213,10 +213,12 @@ Include the 'useti' flag to actually use the database during enrichment processe
 
 Adding custom text-based files to the underlying database can be achieved using the -intelfile and -inteltype flags together.
 
+**Included Indicator Feeds:** https://github.com/joeavanzato/LogBoost/wiki/Threat-Indicator-Feeds
+
 ### Feature TODOs
 * Add ability to specify multiple IP address column names when processing a variety of log types simultaneously.
 * Ensure there is no collision between embedded JSON keys and existing column names by re-mapping names.
-* Maybe: Export inline to parquet instead of CSV
+* Maybe: Export inline to parquet/other data structures instead of CSV
 
 ### Performance Considerations
 LogBoost is capable of processing a large amount of data as all file processing is handled in separate goroutines - this means if you point it at a source directory containing 10,000 files, it is possible to spawn 10,000 individual goroutines depending on the -concurrentfiles setting.  Additionally, the 'maxgoperfile' argument controls how many sub-routines are spawned to handle the batches for each individual file - therefore, if you had this set to 1, you would have 10k goroutines spawned at any given time - if you used 20 as is default, there would be upwards of 200,000 goroutines spawned assuming all file processing happened concurrently. 
@@ -344,103 +346,3 @@ This section lists any pages, articles, packages or other content that was relie
 * https://github.com/mattn/go-sqlite3
 * https://github.com/VictoriaMetrics/fastcache
 * https://stackoverflow.com/questions/28309988/how-to-read-from-either-gzip-or-plain-text-reader-in-golang/28332019#28332019
-
-#### Included Indicator Feeds
-* https://www.binarydefense.com/banlist.txt
-* https://blacklist.3coresec.net/lists/http.txt
-* https://lists.blocklist.de/lists/bruteforcelogin.txt
-* https://feodotracker.abuse.ch/downloads/ipblocklist_aggressive.txt
-* https://rules.emergingthreats.net/blockrules/compromised-ips.txt
-* https://threatview.io/Downloads/IP-High-Confidence-Feed.txt
-* https://blacklist.3coresec.net/lists/ssh.txt
-* https://dataplane.org/signals/sshidpw.txt
-* https://threatview.io/Downloads/Experimental-IOC-Tweets.txt
-* https://iplists.firehol.org/files/xroxy_30d.ipset
-* https://blacklist.3coresec.net/lists/misc.txt
-* https://threatview.io/Downloads/High-Confidence-CobaltStrike-C2%20-Feeds.txt
-* https://iplists.firehol.org/files/cleantalk_30d.ipset
-* https://iplists.firehol.org/files/stopforumspam_90d.ipset
-* https://view.sentinel.turris.cz/greylist-data/greylist-latest.csv
-* https://iplists.firehol.org/files/php_spammers_30d.ipset
-* https://iplists.firehol.org/files/cybercrime.ipset
-* https://dataplane.org/signals/sshclient.txt
-* https://dataplane.org/signals/vncrfb.txt
-* https://iplists.firehol.org/files/tor_exits_30d.ipset
-* https://iplists.firehol.org/files/dm_tor.ipset
-* https://iplists.firehol.org/files/php_harvesters_30d.ipset
-* https://iplists.firehol.org/files/bds_atif.ipset
-* https://iplists.firehol.org/files/vxvault.ipset
-* https://iplists.firehol.org/files/botscout_30d.ipset
-* https://lists.blocklist.de/lists/21.txt
-* https://iplists.firehol.org/files/iblocklist_onion_router.netset
-* https://iplists.firehol.org/files/proxylists_30d.ipset
-* https://iplists.firehol.org/files/firehol_abusers_30d.netset
-* https://iplists.firehol.org/files/greensnow.ipset
-* https://iplists.firehol.org/files/ipblacklistcloud_recent_30d.ipset
-* https://dataplane.org/signals/telnetlogin.txt
-* https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst
-* https://iplists.firehol.org/files/bitcoin_nodes_30d.ipset
-* https://iplists.firehol.org/files/php_dictionary_30d.ipset
-* https://kriskintel.com/feeds/ktip_malicious_Ips.txt
-* https://lists.blocklist.de/lists/80.txt
-* https://dataplane.org/signals/dnsrd.txt
-* https://myip.ms/files/blacklist/htaccess/latest_blacklist.txt
-* https://lists.blocklist.de/lists/22.txt
-* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/NordVPNIPs.csv
-* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/ProtonVPNIPs.csv
-* https://www.talosintelligence.com/documents/ip-blacklist
-* https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv
-* https://reputation.alienvault.com/reputation.generic
-* http://cinsscore.com/list/ci-badguys.txt
-* https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt
-* https://lists.blocklist.de/lists/25.txt
-* https://iplists.firehol.org/files/et_compromised.ipset
-* https://iplists.firehol.org/files/sslproxies_30d.ipset
-* https://www.botvrij.eu/data/ioclist.ip-src
-* https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-nodes.lst
-* https://raw.githubusercontent.com/scriptzteam/badIPS/main/ips.txt
-* https://reputation.alienvault.com/reputation.data
-* https://iplists.firehol.org/files/blocklist_net_ua.ipset
-* https://raw.githubusercontent.com/rodanmaharjan/ThreatIntelligence/main/Mirai.txt
-* https://raw.githubusercontent.com/Neo23x0/signature-base/master/iocs/c2-iocs.txt
-* https://osint.digitalside.it/Threat-Intel/lists/latestips.txt
-* https://www.dan.me.uk/torlist/
-* https://threatfox.abuse.ch/export/csv/ip-port/recent/
-* https://charles.the-haleys.org/ssh_dico_attack_with_timestamps.php?days=30
-* http://sekuripy.hr/blacklist.txt
-* https://lists.blocklist.de/lists/993.txt
-* https://cdn.ellio.tech/community-feed
-* https://iplists.firehol.org/files/tor_exits_30d.ipset
-* https://sslbl.abuse.ch/blacklist/sslipblacklist_aggressive.txt
-* https://www.botvrij.eu/data/ioclist.ip-dst
-* https://iplists.firehol.org/files/et_compromised.ipset
-* https://check.torproject.org/torbulkexitlist
-* https://lists.blocklist.de/lists/110.txt
-* https://iplists.firehol.org/files/firehol_webclient.netset
-* https://iplists.firehol.org/files/proxz_30d.ipset
-* https://danger.rulez.sk/projects/bruteforceblocker/blist.php
-* https://iplists.firehol.org/files/socks_proxy_30d.ipset
-* https://dataplane.org/signals/sshpwauth.txt
-* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/unverified/IPC2s-30day.csv
-* https://lists.blocklist.de/lists/443.txt
-* https://lists.blocklist.de/lists/143.txt
-* https://dataplane.org/signals/dnstcp.txt
-* https://iplists.firehol.org/files/dyndns_ponmocup.ipset
-* https://raw.githubusercontent.com/montysecurity/C2-Tracker/main/data/all.txt
-* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/blackcat%20ransomware.txt
-* https://beesting.tools/
-* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/CobaltStrike.txt
-* https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/IPC2s-30day.csv
-* https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/compromised-ips.txt
-* https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/illuminate.txt
-* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/Malicious%20IP.txt
-* https://lists.blocklist.de/lists/bots.txt
-* https://mirai.security.gives/data/ip_list.txt
-* https://www.darklist.de/raw.php
-* https://report.rutgers.edu/DROP/attackers
-* https://iplists.firehol.org/files/et_tor.ipset
-* https://raw.githubusercontent.com/CriticalPathSecurity/Public-Intelligence-Feeds/master/sans.txt
-* https://iplists.firehol.org/files/firehol_proxies.netset
-* https://github.com/rodanmaharjan/ThreatIntelligence/raw/main/C2%20IOC.txt
-* https://dataplane.org/signals/proto41.txt
-* https://raw.githubusercontent.com/elliotwutingfeng/rstthreatsall/main/ioc_ip_short_all.txt
