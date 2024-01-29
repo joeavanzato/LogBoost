@@ -105,12 +105,11 @@ func BuildThreatDB(arguments map[string]any, logger zerolog.Logger) error {
 		if UpdateErr != nil {
 			return UpdateErr
 		}
-	}
-
-	// Now we have downloaded intel to intelDir - lets go through each file and parse for ipAddress hits within each file - we will use the filename to tell us what 'type' the data should be categorized as
-	ingestErr := ingestIntel(logger, feeds)
-	if ingestErr != nil {
-		return ingestErr
+		// Now we have downloaded intel to intelDir - lets go through each file and parse for ipAddress hits within each file - we will use the filename to tell us what 'type' the data should be categorized as
+		ingestErr := ingestIntel(logger, feeds)
+		if ingestErr != nil {
+			return ingestErr
+		}
 	}
 
 	UseIntel = true
