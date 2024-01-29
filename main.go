@@ -46,8 +46,9 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dateformat := flag.String("dateformat", "", "The format of the datetime column - example: \"01/02/2006\", \"2006-01-02T15:04:05Z\", etc - Golang standard formats accepted and used in time.parse()")
 	getall := flag.Bool("getall", false, "Get all files in target path, regardless of extension - use with -convert to try and find a parser or alone to process everything as raw text.")
 	writebuffer := flag.Int("writebuffer", 2000, "How many lines to queue at a time for writing to output CSV")
-	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype.")
-	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.")
+	intelname := flag.String("intelname", "", "The name/tag to be applied to the custom intelligence.  Must also specify the 'type' of intel using -inteltype as well as the path via -intelfile")
+	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype as well as the name via -intelname")
+	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.  Must also specify the file via -intelfile and name via -intelname.")
 	summarizeti := flag.Bool("summarizeti", false, "Summarize the contents of the ThreatDB, if it exists.")
 	fullparse := flag.Bool("fullparse", false, "If specified, will scan entire files for all possible keys to use in CSV rather than generalizing messages into an entire column - increases processing time.  Use to expand JSON blobs inside columnar data with -jsoncol to provide the name of the column.")
 	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
@@ -86,6 +87,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"writebuffer":     *writebuffer,
 		"intelfile":       *intelfile,
 		"inteltype":       *inteltype,
+		"intelname":       *intelname,
 		"summarizeti":     *summarizeti,
 		"fullparse":       *fullparse,
 		"updategeo":       *updategeo,
@@ -93,9 +95,9 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"includedc":       *includedc,
 	}
 
-	if (*intelfile != "" && *inteltype == "") || (*intelfile == "" && *inteltype != "") {
-		logger.Error().Msg("Cannot use -intelfile without -inteltype and vice-versa!")
-		return make(map[string]any), errors.New("Cannot use -intelfile without -inteltype and vice-versa!\"")
+	if (*intelfile != "" && (*inteltype == "" || *intelname == "")) || ((*intelfile == "" || *intelname == "") && *inteltype != "") || ((*intelfile == "" || *inteltype == "") && *intelname != "") {
+		logger.Error().Msg("Must use intelfile, intelname and inteltype together")
+		return make(map[string]any), errors.New("Must use intelfile, intelname and inteltype together\"")
 	}
 
 	if *startdate != "" {
@@ -474,21 +476,30 @@ func main() {
 		return
 	}
 	if arguments["intelfile"].(string) != "" {
-		// TODO - Fix this to work with new schema system
 		db, err := helpers.OpenDBConnection(logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return
 		}
-		if helpers.DoesFileExist(arguments["intelfile"].(string)) {
-			// TODO  - Ingest custom intel feed/category if new
-			err = helpers.IngestFile(arguments["intelfile"].(string), arguments["inteltype"].(string), 1, db, logger)
-			if err != nil {
-				logger.Error().Msg(err.Error())
-				return
-			}
-		} else {
+		if !helpers.DoesFileExist(arguments["intelfile"].(string)) {
 			logger.Error().Msgf("Could not find specified file: %v", arguments["intelfile"].(string))
+			return
+		}
+
+		logger.Info().Msgf("Ingesting Custom Intelligence - File Path: %v, Intel Name: %v, Intel Tag %v", arguments["intelfile"].(string), arguments["intelname"].(string), arguments["inteltype"].(string))
+		caterr := helpers.InsertCategory(arguments["inteltype"].(string), db)
+		if caterr != nil {
+			logger.Error().Msg(caterr.Error())
+			return
+		}
+		feederr, feedid := helpers.InsertFeed(arguments["intelname"].(string), "CustomFileIngestion", db)
+		if feederr != nil {
+			logger.Error().Msg(feederr.Error())
+			return
+		}
+		err = helpers.IngestFile(arguments["intelfile"].(string), arguments["inteltype"].(string), feedid, db, logger)
+		if err != nil {
+			logger.Error().Msg(err.Error())
 			return
 		}
 		helpers.SummarizeThreatDB(logger)
