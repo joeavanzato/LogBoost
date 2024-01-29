@@ -269,9 +269,9 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	isDataCenter := false
 	ipString := ""
 	var exists bool
-	noIP := []string{"NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP"}
-	pvtIP := []string{"PVT", "PVT", "PVT", "PVT", "PVT", "PVT"}
-	NAIP := []string{"NA", "NA", "NA", "NA", "NA", "NA", "NA"}
+	noIP := []string{"NoIP", "NoIP", "NoIP"}
+	pvtIP := []string{"PVT", "PVT", "PVT"}
+	NAIP := []string{"NA", "NA", "NA"}
 	if ipAddressColumn != -1 {
 		//ip = net.ParseIP(record[ipAddressColumn])
 		ipString = record[ipAddressColumn]
@@ -411,6 +411,9 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		} else {
 			record = append(record, tmpDomain.Domain)
 		}
+	} else if useDNS {
+		//TODO - Parse the identified domains (if any) and stick in as the TLD
+		record = append(record, "NA")
 	} else {
 		record = append(record, "NA")
 	}
