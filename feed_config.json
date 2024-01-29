@@ -43,42 +43,42 @@
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_21",
+			"name": "blocklist_de_port_21",
 			"url": "https://lists.blocklist.de/lists/21.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_22",
+			"name": "blocklist_de_port_22",
 			"url": "https://lists.blocklist.de/lists/22.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_25",
+			"name": "blocklist_de_port_25",
 			"url": "https://lists.blocklist.de/lists/25.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_80",
+			"name": "blocklist_de_port_80",
 			"url": "https://lists.blocklist.de/lists/80.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_110",
+			"name": "blocklist_de_port_110",
 			"url": "https://lists.blocklist.de/lists/110.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_143",
+			"name": "blocklist_de_port_143",
 			"url": "https://lists.blocklist.de/lists/143.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_443",
+			"name": "blocklist_de_port_443",
 			"url": "https://lists.blocklist.de/lists/443.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "blocklist_de_993",
+			"name": "blocklist_de_port_993",
 			"url": "https://lists.blocklist.de/lists/993.txt",
 			"type": ["suspicious"]
 		},
@@ -213,7 +213,7 @@
 			"type": ["suspicious"]
 		},
 		{
-			"name": "bitnodes_firehol_30d",
+			"name": "bitcoinnodes_firehol_30d",
 			"url": "https://iplists.firehol.org/files/bitcoin_nodes_30d.ipset",
 			"type": ["mining"]
 		},
@@ -258,12 +258,12 @@
 			"type": ["suspicious"]
 		},
 		{
-			"name": "secops_github_tornodes",
+			"name": "secops_github_tor_nodes",
 			"url": "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-nodes.lst",
 			"type": ["tor"]
 		},
 		{
-			"name": "secops_github_torexitnodes",
+			"name": "secops_github_tor_exitnodes",
 			"url": "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst",
 			"type": ["tor"]
 		},
@@ -333,17 +333,12 @@
 			"type": ["suspicious"]
 		},
 		{
-			"name": "dataplane_ssh_idpw",
-			"url": "https://dataplane.org/signals/sshidpw.txt",
-			"type": ["suspicious"]
-		},
-		{
-			"name": "dataplane_ssh_pw",
+			"name": "dataplane_ssh_attempts",
 			"url": "https://dataplane.org/signals/sshpwauth.txt",
 			"type": ["suspicious"]
 		},
 		{
-			"name": "dataplane_telnet_login",
+			"name": "dataplane_telnet_attempts",
 			"url": "https://dataplane.org/signals/telnetlogin.txt",
 			"type": ["suspicious"]
 		},
@@ -393,7 +388,7 @@
 			"type": ["suspicious"]
 		},
 		{
-			"name": "beesting",
+			"name": "beesting_honeypot",
 			"url": "https://beesting.tools/",
 			"type": ["suspicious"]
 		},
@@ -423,7 +418,7 @@
 			"type": ["c2"]
 		},
 		{
-			"name": "mirai_1000",
+			"name": "mirai_bots_1000",
 			"url": "https://mirai.security.gives/data/ip_list.txt",
 			"type": ["bot"]
 		},
