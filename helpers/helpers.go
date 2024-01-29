@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -265,6 +266,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, tempArgs map[string]any) []string {
 	// Columns this function should append to input record (in order): ASN, Country, City, Domains, TOR, SUSPICIOUS, PROXY
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
+	isDataCenter := false
 	ipString := ""
 	var exists bool
 	noIP := []string{"NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP", "NoIP"}
@@ -340,10 +342,14 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	err := asnDB.Lookup(ip, &tmpAsn)
 	if err != nil {
 		//ipTmpStruct.ASNOrg = ""
-		record = append(record, "")
+		record = append(record, "", "")
 	} else {
 		//ipTmpStruct.ASNOrg = tmpAsn.AutonomousSystemOrganization
 		record = append(record, tmpAsn.AutonomousSystemOrganization)
+		record = append(record, tmpAsn.AutonomousSystemOrganization, strconv.FormatUint(uint64(tmpAsn.AutonomousSystemNumber), 10))
+		if slices.Contains(vars.DataCenterASNNumbers, strconv.FormatUint(uint64(tmpAsn.AutonomousSystemNumber), 10)) {
+			isDataCenter = true
+		}
 	}
 	err = cityDB.Lookup(ip, &tmpCity)
 	if err != nil {
@@ -411,21 +417,18 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	}
 
 	if UseIntel {
-		// TODO - Consider setting up in-memory only cache for TI to help speed up if bottlenecks occur
-		categories, feednames, feedcount, TIexists, DBError := CheckIPinTI(ipString, tempArgs["db"].(*sql.DB))
-
+		// TODO - Consider setting up in-memory only cache for already-checked TI to help speed up if bottlenecks occur
+		// Need to study this at scale more
+		// TODO - If we decide to add more columns later on, need to stick empty strings here.
+		categories, feednames, feedcount, TIexists, DBError := CheckIPinTI(ipString, isDataCenter, tempArgs["db"].(*sql.DB))
 		if DBError != nil {
-			//ipTmpStruct.ThreatCat = "NA"
-			record = append(record, "NA")
+			record = append(record, "DBError")
 		} else if TIexists {
-			//ipTmpStruct.ThreatCat = matchType
 			record = append(record, categories, feedcount, feednames)
 		} else {
-			//ipTmpStruct.ThreatCat = "none"
 			record = append(record, "none")
 		}
 	} else {
-		//ipTmpStruct.ThreatCat = "NA"
 		record = append(record, "NA")
 	}
 

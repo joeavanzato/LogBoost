@@ -357,6 +357,10 @@ func CheckIPinTI(ip string, db *sql.DB) (string, string, string, bool, error) {
 		feed_names = append(feed_names, results.feed_name)
 		//return iptype, true, nil
 	}
+	if isDataCenter {
+		categories = append(categories, "dc")
+		feed_names = append(feed_names, "internal datacenter list")
+	}
 	categories = deduplicateStringSlice(categories)
 	feed_names = deduplicateStringSlice(feed_names)
 	if len(feed_names) == 0 {
