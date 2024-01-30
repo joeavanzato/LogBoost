@@ -33,6 +33,11 @@ type threatsCatReport struct {
 	count    int
 }
 
+type feedReport struct {
+	url  string
+	name string
+}
+
 type iPCheckResults struct {
 	feed_name string
 	category  string
@@ -70,6 +75,42 @@ func SummarizeThreatDB(logger zerolog.Logger) {
 			return
 		}
 		logger.Info().Msgf("%v: %v", tmp.category, tmp.count)
+	}
+}
+
+func SummarizeThreatFeeds(logger zerolog.Logger) {
+	db, err := OpenDBConnection(logger)
+	logger.Info().Msg("Summarizing ThreatDB Feeds")
+	if err != nil {
+		logger.Error().Msg("Could not initialize access to threat DB!")
+		return
+	}
+	query := "SELECT COUNT(*) FROM feeds"
+	rows, err := db.Query(query)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	var feedCount string
+	for rows.Next() {
+		err = rows.Scan(&feedCount)
+	}
+	rows.Close()
+	logger.Info().Msgf("Total Feeds: %v", feedCount)
+
+	query_types := "SELECT feed_url, feed_name FROM feeds"
+	rows_types, err := db.Query(query_types)
+	if err != nil {
+		logger.Error().Msg(err.Error())
+		return
+	}
+	for rows_types.Next() {
+		tmp := feedReport{}
+		if err := rows_types.Scan(&tmp.url, &tmp.name); err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		logger.Info().Msgf("Feed Name: %v, URL: %v", tmp.name, tmp.url)
 	}
 }
 

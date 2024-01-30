@@ -50,6 +50,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	intelfile := flag.String("intelfile", "", "The path to a local text file to be added to the threat intelligence database.  Must also specify the 'type' of intel using -inteltype as well as the name via -intelname")
 	inteltype := flag.String("inteltype", "", "A string-based identifier that will appear when matches occur - tor, suspicious, proxy, etc - something to identify what type of file we are ingesting.  Must also specify the file via -intelfile and name via -intelname.")
 	summarizeti := flag.Bool("summarizeti", false, "Summarize the contents of the ThreatDB, if it exists.")
+	tifeeds := flag.Bool("tifeeds", false, "See all currently ingested Threat Indicator Feeds")
 	fullparse := flag.Bool("fullparse", false, "If specified, will scan entire files for all possible keys to use in CSV rather than generalizing messages into an entire column - increases processing time.  Use to expand JSON blobs inside columnar data with -jsoncol to provide the name of the column.")
 	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
 	passthrough := flag.Bool("passthrough", false, "Skip all enrichment steps - only perform log conversion to CSV")
@@ -89,6 +90,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"inteltype":       *inteltype,
 		"intelname":       *intelname,
 		"summarizeti":     *summarizeti,
+		"tifeeds":         *tifeeds,
 		"fullparse":       *fullparse,
 		"updategeo":       *updategeo,
 		"passthrough":     *passthrough,
@@ -512,6 +514,16 @@ func main() {
 			logger.Error().Msg(err.Error())
 		} else {
 			helpers.SummarizeThreatDB(logger)
+		}
+		return
+	}
+
+	if arguments["tifeeds"].(bool) {
+		_, err := os.Stat(helpers.ThreatDBFile)
+		if errors.Is(err, os.ErrNotExist) {
+			logger.Error().Msg(err.Error())
+		} else {
+			helpers.SummarizeThreatFeeds(logger)
 		}
 		return
 	}
