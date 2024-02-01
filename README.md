@@ -149,11 +149,14 @@ Updates to local databases can be triggered via '-updategeo' flag.
 The ultimate output of running LogBoost against one or more input files is a CSV file which represents the original data stream but will contain an additional 7 columns as listed below:
 * lb_IP - Represents the IP address used for enrichment tasks.
 * lb_ASN - Represents the name of the ASN Organization associated with the IP address.
+* lb_ASN_Number - Represents the number of the ASN associated with the IP address
 * lb_Country - Represents the name of the Country associated with the IP address.
 * lb_City - Represents the name of the City associated with the IP address.
 * lb_Domains - Represents any domain name associated with the IP address, split by '|' if there are multiple.
-* lb_ThreatCategory - Represents the threat category associated with the IP address - will be a single string such as 'tor', 'proxy', etc or 'none' if it is not found in the database.
 * lb_TLD - Represents the Top Level Domain associated with the IP address - only populated if 'GeoIP2-Domain.mmdb' is found in the specified MaxMind DB directory (CWD by default).
+* lb_ThreatCategories - Represents the threat categories associated with the IP address - will be a series of strings such as 'tor', 'proxy', etc separated by '|' or 'none' if it is not found in the database.
+* lb_ThreatFeedCount - Represents the number of unique threat feeds this IP address has been seen in.
+* lb_ThreatFeeds - Represents the actual feeds this IP address has been seen in - separated by '|'.
 
 ### Commandline Arguments
 ```
