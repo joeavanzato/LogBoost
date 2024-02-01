@@ -74,6 +74,11 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger, apikey string
 }
 
 func updateMaxMind(logger zerolog.Logger, dir string, k string, apikey string) error {
+	if !strings.Contains(apikey, ":") {
+		logger.Error().Msgf("Invalid API Key Format: %v", apikey)
+		logger.Error().Msgf("Invalid API Setup - must have in format $ACCOUNTID:$APIKEY")
+		return errors.New("Invalid API Setup - must have in format $ACCOUNTID:$APIKEY")
+	}
 	user := strings.Split(apikey, ":")[0]
 	password := strings.Split(apikey, ":")[1]
 	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
