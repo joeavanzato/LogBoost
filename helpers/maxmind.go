@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
+func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger, apikey string) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -53,7 +53,7 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 					continue
 				}
 				logger.Info().Msgf("Updating Local MaxMind %v DB", k)
-				err = updateMaxMind(logger, dir, k)
+				err = updateMaxMind(logger, dir, k, apikey)
 				if err != nil {
 					return err
 				}
@@ -64,7 +64,7 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 				logger.Info().Msg("Skipping Domain DB Update")
 				continue
 			}
-			err = updateMaxMind(logger, dir, k)
+			err = updateMaxMind(logger, dir, k, apikey)
 			if err != nil {
 				return err
 			}
@@ -73,11 +73,16 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger) error {
 	return nil
 }
 
-func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
+func updateMaxMind(logger zerolog.Logger, dir string, k string, apikey string) error {
+	user := strings.Split(apikey, ":")[0]
+	password := strings.Split(apikey, ":")[1]
+	fmt.Println(user)
+	fmt.Println(password)
 	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
 	// Download It First
 	// TODO - Uncomment when done testing
-	err := DownloadFile(logger, vars.MaxMindURLs[k], gzFile, k)
+	//err := DownloadFile(logger, vars.MaxMindURLs[k], gzFile, k)
+	err := DownloadAuthenticatedFile(logger, vars.MaxMindURLs[k], gzFile, k, user, password)
 	if err != nil {
 		logger.Error().Msg("Problem Downloading File!")
 		logger.Error().Msg(err.Error())
@@ -133,7 +138,7 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string) error {
 	return nil
 }
 
-func SetAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
+func SetAPIUrls(arguments map[string]any, logger zerolog.Logger) (error, string) {
 	apiKey := ""
 	if arguments["api"].(string) == "" {
 		logger.Info().Msg("API Key not provided at command line - checking for ENV VAR 'MM_API'")
@@ -159,14 +164,17 @@ func SetAPIUrls(arguments map[string]any, logger zerolog.Logger) error {
 	}
 	if apiKey == "" {
 		logger.Error().Msg("Could not find valid MaxMind API Key")
-		return errors.New("Could not find valid MaxMind API Key")
+		return errors.New("Could not find valid MaxMind API Key"), ""
 	}
-	vars.GeoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=%v&suffix=tar.gz", apiKey)
-	vars.GeoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%v&suffix=tar.gz", apiKey)
-	vars.GeoLiteCountryDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%v&suffix=tar.gz", apiKey)
+	//vars.GeoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-ASN&license_key=%v&suffix=tar.gz", apiKey)
+	//vars.GeoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%v&suffix=tar.gz", apiKey)
+	//vars.GeoLiteCountryDBURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%v&suffix=tar.gz", apiKey)
+	vars.GeoLiteASNDBURL = fmt.Sprintf("https://download.maxmind.com/geoip/databases/GeoLite2-ASN/download?suffix=tar.gz")
+	vars.GeoLiteCityDBURL = fmt.Sprintf("https://download.maxmind.com/geoip/databases/GeoLite2-City/download?suffix=tar.gz")
+	vars.GeoLiteCountryDBURL = fmt.Sprintf("https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz")
 
 	vars.MaxMindURLs["ASN"] = vars.GeoLiteASNDBURL
 	vars.MaxMindURLs["City"] = vars.GeoLiteCityDBURL
 	vars.MaxMindURLs["Country"] = vars.GeoLiteCountryDBURL
-	return nil
+	return nil, apiKey
 }

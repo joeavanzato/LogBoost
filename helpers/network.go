@@ -77,6 +77,39 @@ func DownloadFile(logger zerolog.Logger, url string, filepath string, key string
 	return nil
 }
 
+func DownloadAuthenticatedFile(logger zerolog.Logger, url string, filepath string, key string, user string, password string) (err error) {
+	// TODO - Refactor to handle unit testing
+	if strings.HasPrefix(url, "https://download.maxmind.com") {
+		logger.Info().Msgf("Downloading MaxMind %v DB to path: %v", key, filepath)
+	} else {
+		logger.Info().Msgf("Downloading File %v to path: %v", url, filepath)
+	}
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	client := &http.Client{}
+	fmt.Println(url)
+	req, err := http.NewRequest("GET", url, nil)
+	req.SetBasicAuth(user, password)
+	//resp, err := http.Get(url)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP Status Error: %s", resp.Status)
+	}
+	_, err = io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
+	logger.Info().Msgf("Successfully Downloaded: %v", url)
+	return nil
+}
+
 func LookupIPRecords(ip string) []string {
 	// TODO It is possible to set custom resolvers here - should explore setting up a rotating resolver to spread requests between multiple nameservers
 	// https://stackoverflow.com/questions/59889882/specifying-dns-server-for-lookup-in-go
