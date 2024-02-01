@@ -90,7 +90,6 @@ func DownloadAuthenticatedFile(logger zerolog.Logger, url string, filepath strin
 	}
 	defer out.Close()
 	client := &http.Client{}
-	fmt.Println(url)
 	req, err := http.NewRequest("GET", url, nil)
 	req.SetBasicAuth(user, password)
 	//resp, err := http.Get(url)

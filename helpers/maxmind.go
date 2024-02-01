@@ -76,8 +76,6 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger, apikey string
 func updateMaxMind(logger zerolog.Logger, dir string, k string, apikey string) error {
 	user := strings.Split(apikey, ":")[0]
 	password := strings.Split(apikey, ":")[1]
-	fmt.Println(user)
-	fmt.Println(password)
 	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
 	// Download It First
 	// TODO - Uncomment when done testing
