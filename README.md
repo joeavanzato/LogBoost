@@ -134,10 +134,12 @@ To use, just download the latest release binary (along with feed_config.json if 
 
 To use this tool, a free API key from MaxMind is required - once an account is registered, a personal license key can be generated at https://www.maxmind.com/en/accounts/.
 
-This license key must be provided in one of 3 ways to the tool:
+In order to update MaxMind MMDBs, you must provide your Account ID and API Key in one of 3 ways to the tool:
 * via commandline argument '-api'
 * via environment variable 'MM_API'
 * via file in current working directory named 'mm_api.txt'
+
+The expected format is "$ACCOUNTID:$APIKEY" - for example, -api "222111:6ij3x2_GRChRSGRAWeHuFbu4W136UDGdrLeV_sse"
 
 The tool will automatically download and extract the latest version of each database if they are not found in the current working directory.
 
@@ -158,7 +160,7 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 -dbdir [string] (default="") - Specify the directory containing MaxMind DBs at the dir or one level below - if they don't exist, will attempt to download.
 -updategeo [bool] (default=false) - Update local MaxMind DBs (if they already exist)
 
--api [string] (default="") - Specify a MaxMind API key - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
+-api [string] (default="") - Specify a MaxMind API accountid/ke in format "$ID:$KEY" - if not provided will subsequently check for ENVVAR 'MM_API' then mm_api.txt in CWD.
 
 -logdir [string] (default="input") - specify the directory containing one or more files to process
 -outputdir [string] (default="output") - specify the directory to store enriched logs - defaults to $CWD\output
