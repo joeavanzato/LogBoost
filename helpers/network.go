@@ -132,7 +132,7 @@ func IsPrivateIP(ip net.IP, ipstring string) bool {
 	if ip.IsPrivate() {
 		return true
 	}
-	if ipstring == "127.0.0.1" || ipstring == "::" || ipstring == "::1" || ipstring == "0.0.0.0" || strings.Contains(ipstring, "255.") {
+	if ipstring == "127.0.0.1" || ipstring == "::" || ipstring == "::1" || ipstring == "0.0.0.0" {
 		return true
 	}
 
