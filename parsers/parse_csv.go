@@ -38,6 +38,12 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 				if strings.ToLower(k) == strings.ToLower(arguments["IPcolumn"].(string)) {
 					ipAddressColumn = i
 				}
+				// For the first column, there is a weird space added - so we will do this if index == 0 to account
+				if i == 0 {
+					if strings.Contains(strings.ToLower(k), strings.ToLower(arguments["IPcolumn"].(string))) {
+						ipAddressColumn = i
+					}
+				}
 				if strings.ToLower(k) == strings.ToLower(arguments["JSONcolumn"].(string)) {
 					jsonColumn = i
 				}
