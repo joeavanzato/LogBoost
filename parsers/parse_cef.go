@@ -213,7 +213,8 @@ func ParseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 			break
 		} else if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		record := splitCEFLine(line, fullParse, headers, logFormat, cefKeys)
 		if len(record) == 0 {

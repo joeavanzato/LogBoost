@@ -135,7 +135,8 @@ func ParseJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.R
 		}
 		if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		// Old method
 		//record := buildRecordJSON(line, jsonkeys)

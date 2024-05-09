@@ -35,6 +35,7 @@ func setupHeaders(logger zerolog.Logger, arguments map[string]any, parser *csv.R
 
 			// TODO - Support multiple possible IP address fields and use the first one - let user enter slice as argument instead of only string.
 			for i, k := range record {
+				//logger.Info().Msgf(helpers.RemoveSpace(k))
 				if strings.ToLower(k) == strings.ToLower(arguments["IPcolumn"].(string)) {
 					ipAddressColumn = i
 				}
@@ -125,7 +126,7 @@ func ProcessCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 			break
 		} else if Ferr != nil {
 			logger.Error().Msg(Ferr.Error())
-			return
+			continue
 		}
 		if idx == 0 {
 			Werr := newWrite.Write(headers)

@@ -131,7 +131,8 @@ func ParseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 			break
 		} else if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		record := strings.Split(line, delim)
 		records = append(records, record)

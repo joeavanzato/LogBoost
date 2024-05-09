@@ -123,7 +123,8 @@ func ParseSyslog(logger zerolog.Logger, inputFile string, outputFile string, asn
 			break
 		} else if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		record := buildSyslogRecord(line, syslogFormat)
 		if len(record) == 0 {

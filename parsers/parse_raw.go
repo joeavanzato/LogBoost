@@ -67,7 +67,8 @@ func ParseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 		}
 		if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		records = append(records, []string{line})
 		if len(records) <= lineBatchSize {

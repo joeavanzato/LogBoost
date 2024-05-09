@@ -137,7 +137,8 @@ func ParseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 		}
 		if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		record := buildKVRecord(line, kvheaders, kv_regex)
 		if len(record) == 0 {

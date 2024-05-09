@@ -116,7 +116,8 @@ func ParseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 			break
 		} else if scanErr != nil {
 			logger.Error().Msg(scanErr.Error())
-			return scanErr
+			//return scanErr
+			continue
 		}
 		record := buildCLFRecord(line, format)
 		if len(record) == 0 {
