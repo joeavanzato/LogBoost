@@ -626,6 +626,7 @@ func readAndSendToChannel(csvFile string, c chan []string, waiter *lbtypes.WaitG
 	defer inputHeaderFile.Close()
 	idx := 0
 	reader := csv.NewReader(inputHeaderFile)
+	reader.FieldsPerRecord = -1
 	newIndexOrder := make([]int, 0)
 	for {
 		record, Ferr := reader.Read()
