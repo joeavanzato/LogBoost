@@ -368,11 +368,6 @@
 			"type": ["suspicious"]
 		},
 		{
-			"name": "firehol_et_compromised",
-			"url": "https://iplists.firehol.org/files/et_compromised.ipset",
-			"type": ["suspicious"]
-		},
-		{
 			"name": "dyndns_ponmocup",
 			"url": "https://iplists.firehol.org/files/dyndns_ponmocup.ipset",
 			"type": ["suspicious"]
@@ -486,6 +481,11 @@
 			"name": "lopez_tweetfeed_month",
 			"url": "https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv",
 			"type": ["suspicious"]
+		},
+		{
+			"name": "viriback_c2_tracker",
+			"url": "https://tracker.viriback.com/dump.php",
+			"type": ["c2"]
 		}
 	]
 }
