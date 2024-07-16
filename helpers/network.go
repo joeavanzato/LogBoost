@@ -114,7 +114,7 @@ func LookupIPRecords(ip string) []string {
 	// https://stackoverflow.com/questions/59889882/specifying-dns-server-for-lookup-in-go
 	records, err := net.DefaultResolver.LookupAddr(context.Background(), ip)
 	if err != nil {
-		return []string{"None"}
+		return []string{"none"}
 	}
 	return records
 }
