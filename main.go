@@ -32,6 +32,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	separator := flag.String("separator", "=", "Use provided value as separator for KV logging.  Example - if log is in format k1=v1,k2=v2 then the separator would be '='")
 	delimiter := flag.String("delimiter", ",", "Use provided value as KV delimiter for KV logging. Example - if log is in format k1=v1,k2=v2 then the delimiter would be ','")
 	dns := flag.Bool("dns", false, "If enabled, will do live DNS lookups on the IP address to see if it resolves to any domain records.")
+	whois := flag.Bool("whois", false, "If enabled, will do live WhoIS lookups on both associated IPs and DNS records (if DNS is also used).")
 	maxgoperfile := flag.Int("maxgoperfile", 20, "Maximum number of goroutines to spawn on a per-file basis for concurrent processing of data.")
 	batchsize := flag.Int("batchsize", 500, "Maximum number of lines to read at a time for processing within each spawned goroutine per file.")
 	concurrentfiles := flag.Int("concurrentfiles", 100, "Maximum number of files to process concurrently.")
@@ -55,6 +56,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
 	passthrough := flag.Bool("passthrough", false, "Skip all enrichment steps - only perform log conversion to CSV")
 	includedc := flag.Bool("includedc", false, "Include datacenter list for Threat Intelligence enrichment - will add approximately ~129 million IP addresses to the DB (~7 GB on disk)")
+	ip := flag.String("ip", "", "Provide an IP address for ad-hoc enrichment via stdout")
 	flag.Parse()
 
 	if *getall {
@@ -95,6 +97,8 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"updategeo":       *updategeo,
 		"passthrough":     *passthrough,
 		"includedc":       *includedc,
+		"ip":              *ip,
+		"whois":           *whois,
 	}
 
 	if (*intelfile != "" && (*inteltype == "" || *intelname == "")) || ((*intelfile == "" || *intelname == "") && *inteltype != "") || ((*intelfile == "" || *inteltype == "") && *intelname != "") {
@@ -204,6 +208,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	}
 
 	tempArgs["passthrough"] = arguments["passthrough"].(bool)
+	tempArgs["use_whois"] = arguments["whois"].(bool)
 	//startDate, endDate := getDateBounds(tempArgs)
 
 	// TODO - Make this OS independent
@@ -549,6 +554,18 @@ func main() {
 		return
 	}
 
+	if arguments["ip"].(string) != "" {
+		adhocIP := arguments["ip"].(string)
+		ipString, exists := helpers.RegexFirstPublicIPFromString(adhocIP)
+		if !exists {
+			logger.Error().Msgf("Invalid IP Address: %v", adhocIP)
+			return
+		}
+		fmt.Println(ipString)
+
+		return
+	}
+
 	start := time.Now()
 	logFiles, err := findLogsToProcess(arguments, logger)
 	if err != nil {
@@ -568,8 +585,13 @@ func main() {
 		}
 		return
 	}
+
 	saveCacheErr := vars.Dnsfastcache.SaveToFile(vars.DnsCacheFile)
 	if saveCacheErr != nil {
 		logger.Error().Msg(saveCacheErr.Error())
+	}
+	saveWhoisCacheErr := vars.Whoisfastcache.SaveToFile(vars.WhoisCacheFile)
+	if saveWhoisCacheErr != nil {
+		logger.Error().Msg(saveWhoisCacheErr.Error())
 	}
 }
