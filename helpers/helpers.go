@@ -8,7 +8,9 @@ import (
 	"encoding/csv"
 	"fmt"
 	"github.com/joeavanzato/logboost/lbtypes"
+	tldparser "github.com/joeavanzato/logboost/tldparserr"
 	"github.com/joeavanzato/logboost/vars"
+	whoisparser "github.com/likexian/whois-parser"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -361,21 +363,50 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		record = append(record, tmpCity.Country.Names["en"], tmpCity.City.Names["en"])
 	}
 
+	if UseIntel {
+		// TODO - Consider setting up in-memory only cache for already-checked TI to help speed up if bottlenecks occur
+		// Need to study this at scale more
+		// TODO - If we decide to add more columns later on, need to stick empty strings here.
+		categories, feednames, feedcount, TIexists, DBError := CheckIPinTI(ipString, isDataCenter, tempArgs["db"].(*sql.DB))
+		if DBError != nil {
+			record = append(record, "DBError", "error", "error")
+		} else if TIexists {
+			record = append(record, categories, feedcount, feednames)
+		} else {
+			record = append(record, "none", "0", "none")
+		}
+	} else {
+		record = append(record, "NA", "NA", "0")
+	}
+
+	domain := ""
 	if useDNS {
 		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
 		// TODO - Consider adding DomainCount column
 		//records, dnsExists := CheckIPDNS(ipString)
 
 		// fastcache implementation
+
+		// TODO - Implement whois check here for found domains
 		value := make([]byte, 0)
+
 		value, existsInCache := vars.Dnsfastcache.HasGet(value, []byte(ipString))
 		if existsInCache {
 			record = append(record, string(value))
+			dnsRecords := strings.Split(string(value), "|")
+			_, m, td := tldparser.ParseDomain(dnsRecords[0])
+			domain = fmt.Sprintf("%s.%s", m, td)
 		} else {
 			dnsRecords := LookupIPRecords(ipString)
+			for i, v := range dnsRecords {
+				dnsRecords[i] = strings.TrimSuffix(strings.TrimSpace(v), ".")
+			}
+			_, m, td := tldparser.ParseDomain(dnsRecords[0])
+			domain = fmt.Sprintf("%s.%s", m, td)
 			record = append(record, strings.Join(dnsRecords, "|"))
 			recordsJoined := strings.Join(dnsRecords, "|")
 			vars.Dnsfastcache.Set([]byte(ipString), []byte(recordsJoined))
+
 		}
 		// Below uses bigcache implementation
 		/*		entry, dnscacheerr := dnscache.Get(ipString)
@@ -402,43 +433,233 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	} else {
 		record = append(record, "")
 	}
+	// For TLD
+	if domain == "." || domain == "" {
+		record = append(record, "none")
+	} else {
+		record = append(record, domain)
+	}
 
-	if vars.MaxMindStatus["Domain"] {
-		tmpDomain := lbtypes.Domain{}
-		err := domainDB.Lookup(ip, &tmpDomain)
-		if err != nil {
+	// Removing for now as we can get TLD from live DNS if we are using that
+	/*	if vars.MaxMindStatus["Domain"] {
+			tmpDomain := lbtypes.Domain{Domain: ""}
+			errDNS := domainDB.Lookup(ip, &tmpDomain)
+			if errDNS != nil {
+				record = append(record, "NA")
+			} else {
+				record = append(record, tmpDomain.Domain)
+			}
+		} else if useDNS {
+			//TODO - Parse the identified domains (if any) and stick in as the TLD
 			record = append(record, "NA")
 		} else {
-			record = append(record, tmpDomain.Domain)
-		}
-	} else if useDNS {
-		//TODO - Parse the identified domains (if any) and stick in as the TLD
-		record = append(record, "NA")
-	} else {
-		record = append(record, "NA")
-	}
+			record = append(record, "NA")
+		}*/
 
-	if UseIntel {
-		// TODO - Consider setting up in-memory only cache for already-checked TI to help speed up if bottlenecks occur
-		// Need to study this at scale more
-		// TODO - If we decide to add more columns later on, need to stick empty strings here.
-		categories, feednames, feedcount, TIexists, DBError := CheckIPinTI(ipString, isDataCenter, tempArgs["db"].(*sql.DB))
-		if DBError != nil {
-			record = append(record, "DBError")
-		} else if TIexists {
-			record = append(record, categories, feedcount, feednames)
+	// Handling Domain WhoIS lookups if we are using DNS and have a parsed domain with tld
+	if tempArgs["use_whois"].(bool) && domain != "" && domain != "." {
+		// "lb_DomainWhois_CreatedDate", "lb_DomainWhois_UpdatedDate", "lb_DomainWhois_Country", "lb_DomainWhois_Organization"
+		//u, _ := tld.Parse(dnsRecords[i])
+		//domain := fmt.Sprintf("%s.%s", u.Domain, u.TLD)
+		// Check for cached data using this domain
+		_value := make([]byte, 0)
+		cacheValue, _existsInCache := vars.Whoisfastcache.HasGet(_value, []byte(domain))
+		if _existsInCache {
+			// If it exists, check if it was stored with an error and it not, parse it out and append the values
+			if string(cacheValue) == "error" {
+				record = append(record, "err", "err", "err", "err")
+			} else {
+				whoisData := strings.Split(string(cacheValue), "|")
+				record = append(record, whoisData...)
+			}
 		} else {
-			record = append(record, "none")
+			// Domain Does not exist in cache yet
+			result2, whoiserr := Whois(domain)
+			if whoiserr != nil {
+				vars.Whoisfastcache.Set([]byte(domain), []byte("error"))
+				record = append(record, "err", "err", "err", "err")
+			} else {
+				// Set cache
+				parsedresult, parseerr := whoisparser.Parse(result2)
+				if parseerr == nil {
+					whoIsData := make([]string, 0)
+					if parsedresult.Domain != nil {
+						whoIsData = append(whoIsData, parsedresult.Domain.CreatedDate, parsedresult.Domain.UpdatedDate)
+					} else {
+						whoIsData = append(whoIsData, "NA", "NA")
+					}
+					if parsedresult.Registrant != nil {
+						whoIsData = append(whoIsData, parsedresult.Registrant.Country, parsedresult.Registrant.Organization)
+					} else {
+						whoIsData = append(whoIsData, "NA", "NA")
+					}
+					record = append(record, whoIsData...)
+					vars.Whoisfastcache.Set([]byte(domain), []byte(strings.Join(whoIsData, "|")))
+				} else {
+					vars.Whoisfastcache.Set([]byte(domain), []byte("error"))
+					record = append(record, "err", "err", "err", "err")
+				}
+			}
 		}
 	} else {
-		record = append(record, "NA")
+		// no whois used OR domain is invalid
+		record = append(record, "NA", "NA", "NA", "NA")
 	}
 
-	/*	if useDNS {
-		AddIP(ipString, ipTmpStruct)
-	}*/
+	// Handling IP Whois lookups
+	// This is pretty slow - probably will adopt just specific source code from the current used library to streamline this
+	if tempArgs["use_whois"].(bool) {
+		value := make([]byte, 0)
+		cacheValue, existsInCache := vars.Whoisfastcache.HasGet(value, []byte(ipString))
+		if existsInCache {
+			if string(cacheValue) == "error" {
+				record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
+			} else {
+				parsedResult, parseerr := ParseIPWhoisLookup(string(cacheValue))
+				if parseerr == nil {
+					// "lb_Whois_CIDR", "lb_Whois_NetName", "lb_Whois_NetType", "lb_Whois_Organization", "lb_Whois_Created", "lb_Whois_Updated", "lb_Whois_Organization", "lb_Whois_Country", "lb_Whois_Parent"
+					record = append(record, parsedResult.CIDR, parsedResult.NetName, parsedResult.NetType, parsedResult.Customer, parsedResult.RegistrationDate, parsedResult.RegistrationUpdated, parsedResult.Country, parsedResult.Parent)
+					//recordsJoined := strings.Join(dnsRecords, "|")
+				} else {
+					record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
+				}
+			}
+		} else {
+			//result2, whoiserr := whois.Whois(ipString)
+			// IP Does not exist in cache yet
+			result2, whoiserr := Whois(ipString)
+			if result2 == "" {
+				vars.Whoisfastcache.Set([]byte(ipString), []byte("error"))
+			} else {
+				vars.Whoisfastcache.Set([]byte(ipString), []byte(result2))
+			}
+			if whoiserr == nil {
+				parsedResult, parseerr := ParseIPWhoisLookup(result2)
+				if parseerr == nil {
+					// "lb_Whois_CIDR", "lb_Whois_NetName", "lb_Whois_NetType", "lb_Whois_Organization", "lb_Whois_Created", "lb_Whois_Updated", "lb_Whois_Organization", "lb_Whois_Country", "lb_Whois_Parent"
+					record = append(record, parsedResult.CIDR, parsedResult.NetName, parsedResult.NetType, parsedResult.Customer, parsedResult.RegistrationDate, parsedResult.RegistrationUpdated, parsedResult.Country, parsedResult.Parent)
+					//recordsJoined := strings.Join(dnsRecords, "|")
+				} else {
+					record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
+				}
+			}
+		}
+	}
 
 	return record
+}
+
+type IPWhoisResult struct {
+	NetRange            string
+	CIDR                string
+	NetName             string
+	NetHandle           string
+	Parent              string
+	NetType             string
+	OriginAS            string
+	Customer            string
+	RegistrationDate    string
+	RegistrationUpdated string
+	ReferenceURL        string
+	CustomerName        string
+	Address             string
+	City                string
+	StateProv           string
+	PostalCode          string
+	Country             string
+	AddressUpdated      string
+	EntityReferenceURL  string
+	OrgNOCName          string
+	OrgNOCEmail         string
+	OrgTechName         string
+	OrgTechEmail        string
+	OrgAbuseName        string
+	OrgAbuseEmail       string
+}
+
+func ParseIPWhoisLookup(data string) (IPWhoisResult, error) {
+	var dataSplit = strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n")
+	var result = IPWhoisResult{
+		NetRange:            "",
+		CIDR:                "",
+		NetName:             "",
+		NetHandle:           "",
+		Parent:              "",
+		NetType:             "",
+		OriginAS:            "",
+		Customer:            "",
+		RegistrationDate:    "",
+		RegistrationUpdated: "",
+		ReferenceURL:        "",
+		CustomerName:        "",
+		Address:             "",
+		City:                "",
+		StateProv:           "",
+		PostalCode:          "",
+		Country:             "",
+		AddressUpdated:      "",
+		EntityReferenceURL:  "",
+		OrgNOCName:          "",
+		OrgNOCEmail:         "",
+		OrgTechName:         "",
+		OrgTechEmail:        "",
+		OrgAbuseName:        "",
+		OrgAbuseEmail:       "",
+	}
+	for _, v := range dataSplit {
+		var value = strings.TrimSpace(v[strings.LastIndex(v, ":")+1:])
+		if strings.HasPrefix(v, "NetRange") {
+			result.NetRange = value
+		} else if strings.HasPrefix(v, "CIDR:") {
+			result.CIDR = value
+		} else if strings.HasPrefix(v, "NetName:") {
+			result.NetName = value
+		} else if strings.HasPrefix(v, "NetHandle:") {
+			result.NetHandle = value
+		} else if strings.HasPrefix(v, "Parent:") {
+			result.Parent = value
+		} else if strings.HasPrefix(v, "NetType:") {
+			result.NetType = value
+		} else if strings.HasPrefix(v, "OriginAS:") {
+			result.OriginAS = value
+		} else if strings.HasPrefix(v, "Customer:") {
+			result.Customer = value
+		} else if strings.HasPrefix(v, "Organization:") {
+			result.Customer = value
+		} else if strings.HasPrefix(v, "Address:") {
+			result.Address = value
+		} else if strings.HasPrefix(v, "City:") {
+			result.City = value
+		} else if strings.HasPrefix(v, "StateProv:") {
+			result.StateProv = value
+		} else if strings.HasPrefix(v, "PostalCode:") {
+			result.PostalCode = value
+		} else if strings.HasPrefix(v, "Country:") {
+			result.Country = value
+		} else if strings.HasPrefix(v, "RegDate:") {
+			result.RegistrationDate = value
+		} else if strings.HasPrefix(v, "Updated:") {
+			result.AddressUpdated = value
+		} else if strings.HasPrefix(v, "OrgNOCHandle:") {
+		} else if strings.HasPrefix(v, "OrgNOCName:") {
+			result.OrgNOCName = value
+		} else if strings.HasPrefix(v, "OrgNOCEmail:") {
+			result.OrgNOCEmail = value
+		} else if strings.HasPrefix(v, "OrgTechHandle:") {
+
+		} else if strings.HasPrefix(v, "OrgTechName:") {
+			result.OrgTechName = value
+		} else if strings.HasPrefix(v, "OrgTechEmail:") {
+			result.OrgTechEmail = value
+		} else if strings.HasPrefix(v, "OrgAbuseHandle:") {
+
+		} else if strings.HasPrefix(v, "OrgAbuseName:") {
+			result.OrgAbuseName = value
+		} else if strings.HasPrefix(v, "OrgAbuseEmail:") {
+			result.OrgAbuseEmail = value
+		}
+	}
+	return result, nil
 }
 
 func CombineOutputs(arguments map[string]any, logger zerolog.Logger) error {
@@ -525,8 +746,10 @@ func combineWriterListen(outputF *os.File, writer *csv.Writer, c chan []string, 
 }
 
 func RegexFirstPublicIPFromString(input string) (string, bool) {
+	// Searches a string input for a public IPv4/IPv6 - returns the IP and true if found or nil and false if not.
 	// If we find more than 1 match, check for first non-private IP
 	// If there is only one match, just return it
+	//fmt.Println("Input: " + input)
 	match := vars.Ipv4_regex.FindAllStringSubmatch(input, -1)
 	ipList := make([]string, 0)
 	if match != nil {
@@ -545,6 +768,7 @@ func RegexFirstPublicIPFromString(input string) (string, bool) {
 	match2 := vars.Ipv6_regex.FindAllStringSubmatch(input, -1)
 	if match2 != nil {
 		for _, v := range match2 {
+			//fmt.Println("RETURNING " + v[1])
 			return v[1], true
 		}
 	}
@@ -562,6 +786,7 @@ func RegexFirstPublicIPFromString(input string) (string, bool) {
 				return match2[i], true
 			}
 		}*/
+	//fmt.Println("RETURNING FALSE")
 	return "", false
 }
 
@@ -679,7 +904,7 @@ func resortRecord(record []string, sortOrder []int, initialHeaders []string) []s
 	return newRecord
 }
 
-func removeSpace(s string) string {
+func RemoveSpace(s string) string {
 	rr := make([]rune, 0, len(s))
 	for _, r := range s {
 		if !unicode.IsSpace(r) {
