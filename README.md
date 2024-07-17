@@ -39,6 +39,8 @@ To use, just download the latest release binary (along with feed_config.json if 
 * ```LogBoost.exe -updateti -includedc``` - Update the Threat Indicator database and also include datacenter IP addresses - this will add approximately ~129 million IPs consuming approximately 7 GB of space on disk.  This is typically not necessary as LogBoost also contains a built-in list of ASN Numbers derived from https://raw.githubusercontent.com/X4BNet/lists_vpn/main/input/datacenter/ASN.txt
 * ```LogBoost.exe -logdir logs -regex -api XXX``` - Enrich a directory containing one or more CSV files with Geolocation information, using regex to find the first non-private IP address in each row
 
+* ```LogBoost.exe -useti -dns -whois -idb -getall -convert -regex``` - Enrich any files inside /input with Threat Intelligence, DNS, WhoIS, InternetDB and MaxMind data 
+
 
 * ```LogBoost.exe -logdir input -jsoncol data -ipcol client -fullparse``` - Enrich any CSV file within 'input' while also expanding JSON blobs located in the column named 'data' - the enriched IP address will be pulled from the column named 'client'.
 * ```LogBoost.exe -logdir input -jsoncol data -fullparse -regex``` - Same as above but use regex to find the first non-private IP address.
@@ -123,6 +125,9 @@ To use, just download the latest release binary (along with feed_config.json if 
 * Enriching detected IP with MaxMind Geo/ASN Information
 * Enriching detected IP with DNS lookups
 * Enriching detected IP with configurable threat indicator feeds
+* Enriching detected IP with WhoIs data
+* Enriching detected IP with Shodan InternetDB data
+* Enriching detected domain-names from DNS with WhoIs data
 * Ingesting custom indicator files
 * Combining outputs on per-directory basis
 * Customizing concurrency settings to fine-tune efficiency/throughput
@@ -152,11 +157,30 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 * lb_ASN_Number - Represents the number of the ASN associated with the IP address
 * lb_Country - Represents the name of the Country associated with the IP address.
 * lb_City - Represents the name of the City associated with the IP address.
-* lb_Domains - Represents any domain name associated with the IP address, split by '|' if there are multiple.
-* lb_TLD - Represents the Top Level Domain associated with the IP address - only populated if 'GeoIP2-Domain.mmdb' is found in the specified MaxMind DB directory (CWD by default).
-* lb_ThreatCategories - Represents the threat categories associated with the IP address - will be a series of strings such as 'tor', 'proxy', etc separated by '|' or 'none' if it is not found in the database.
-* lb_ThreatFeedCount - Represents the number of unique threat feeds this IP address has been seen in.
-* lb_ThreatFeeds - Represents the actual feeds this IP address has been seen in - separated by '|'.
+* lb_Domains (-dns) - Represents any domain name associated with the IP address, split by '|' if there are multiple.
+* lb_TLD (-dns) - Represents the Top Level Domain associated with the IP address - only populated if 'GeoIP2-Domain.mmdb' is found in the specified MaxMind DB directory (CWD by default).
+* lb_ThreatCategories (-useti) - Represents the threat categories associated with the IP address - will be a series of strings such as 'tor', 'proxy', etc separated by '|' or 'none' if it is not found in the database.
+* lb_ThreatFeedCount (-useti) - Represents the number of unique threat feeds this IP address has been seen in.
+* lb_ThreatFeeds (-useti) - Represents the actual feeds this IP address has been seen in - separated by '|'.
+* lb_Domains - (-dns) - Represents domains that the IP resolves to.
+* lb_TLD - (-dns) - Represents the hostname/TLD that  the IP resolves to (ex: aws.com)
+* lb_DomainWhois_CreatedDate (-whois & -dns) - Represents the date that Whois reports for domain creation
+* lb_DomainWhois_UpdatedDate (-whois & -dns) - Represents the date that Whois reports for domain update
+* lb_DomainWhois_Country (-whois & -dns) - Represents the country that Whois reports for domain registration
+* lb_DomainWhois_Organization (-whois & -dns) - Represents the organization that Whois reports for domain registration
+* lb_IPWhois_CIDR (-whois) - Represents the CIDR network the IP address belongs to
+* lb_IPWhois_NetName (-whois) - Represents the Network Name the IP address belongs to
+* lb_IPWhois_NetType (-whois) - Represents the Network Type (Reallocated, etc) the IP address belongs to
+* lb_IPWhois_Organization (-whois) - Represents the Organization Name the IP address belongs to
+* lb_IPWhois_Created (-whois) - Represents the Created Date for the IP per Whois
+* lb_IPWhois_Updated (-whois) - Represents the latest Updated Date for the IP per Whois
+* lb_IPWhois_Country (-whois) - Represents the registration Country for the IP per Whois
+* lb_IPWhois_Parent (-whois) - Represents the Parent Network for the IP per Whois
+* lb_IDB_cpes (-idb) - Represents any known CPEs for the IP address
+* lb_IDB_hostnames (-idb) - Represents any known hostnames for the IP address
+* lb_IDB_ports (-idb) - Represents any known open ports
+* lb_IDB_tags (-idb) - Represents any additional tagging details
+* lb_IDB_vulns (-idb) - Represents any scanned/known vulnerabilities
 
 ### Commandline Arguments
 ```
@@ -189,6 +213,10 @@ The ultimate output of running LogBoost against one or more input files is a CSV
 -batchsize [int] (default=500) - Limit how many lines per-file are sent to each spawned goroutine
 -writebuffer [int] (default=2000) - How many lines to buffer in memory before writing to CSV
 -concurrentfiles [int] (default=100) - Limit how many files are processed concurrently.
+
+-whois [bool] (default=false) - Enrich IP address (and domain if using -dns) with live WhoIs lookups
+
+-idb [bool] (default=false) - Enrich IP address with live Shodan InternetDB data
 
 -combine [bool] (default=false) - Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.
 
