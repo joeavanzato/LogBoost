@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,6 +57,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	updategeo := flag.Bool("updategeo", false, "Update local MaxMind databases, even if they are detected.")
 	passthrough := flag.Bool("passthrough", false, "Skip all enrichment steps - only perform log conversion to CSV")
 	includedc := flag.Bool("includedc", false, "Include datacenter list for Threat Intelligence enrichment - will add approximately ~129 million IP addresses to the DB (~7 GB on disk)")
+	idb := flag.Bool("idb", false, "Perform a live enrichment using the Shodan InternetDB")
 	ip := flag.String("ip", "", "Provide an IP address for ad-hoc enrichment via stdout")
 	flag.Parse()
 
@@ -99,6 +101,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"includedc":       *includedc,
 		"ip":              *ip,
 		"whois":           *whois,
+		"idb":             *idb,
 	}
 
 	if (*intelfile != "" && (*inteltype == "" || *intelname == "")) || ((*intelfile == "" || *intelname == "") && *inteltype != "") || ((*intelfile == "" || *inteltype == "") && *intelname != "") {
@@ -209,6 +212,10 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 
 	tempArgs["passthrough"] = arguments["passthrough"].(bool)
 	tempArgs["use_whois"] = arguments["whois"].(bool)
+	tempArgs["use_idb"] = arguments["idb"].(bool)
+	tempArgs["use_dns"] = arguments["dns"].(bool)
+	tempArgs["passthrough"] = arguments["passthrough"].(bool)
+	tempArgs["use_ti"] = arguments["useti"].(bool)
 	//startDate, endDate := getDateBounds(tempArgs)
 
 	// TODO - Make this OS independent
@@ -454,9 +461,31 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 	}
 }
 
+func test() {
+	ipaddress := "8.8.8.8"
+	resp, err := helpers.IDB_Http_Client.Get(fmt.Sprintf("https://internetdb.shodan.io/%s", ipaddress))
+	if err != nil {
+		fmt.Println("Error %s", err)
+	}
+	defer resp.Body.Close()
+	if err != nil {
+		fmt.Println("Error %s", err)
+	}
+	dec := json.NewDecoder(resp.Body)
+	dec.DisallowUnknownFields()
+	var p lbtypes.ShodanIDBResponse
+	err = dec.Decode(&p)
+	if err != nil {
+		fmt.Println("Error %s", err)
+		vars.IDBfastcache.Set([]byte(ipaddress), []byte("error"))
+	}
+	fmt.Println(p)
+}
+
 func main() {
 	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
-
+	//test()
+	//return
 	logger := helpers.SetupLogger()
 	arguments, err := parseArgs(logger)
 	if err != nil {
@@ -593,5 +622,9 @@ func main() {
 	saveWhoisCacheErr := vars.Whoisfastcache.SaveToFile(vars.WhoisCacheFile)
 	if saveWhoisCacheErr != nil {
 		logger.Error().Msg(saveWhoisCacheErr.Error())
+	}
+	saveIDBCacheErr := vars.IDBfastcache.SaveToFile(vars.IDBCacheFile)
+	if saveIDBCacheErr != nil {
+		logger.Error().Msg(saveIDBCacheErr.Error())
 	}
 }

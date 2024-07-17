@@ -189,6 +189,28 @@ func DoesFileExist(filename string) bool {
 	return true
 }
 
+func GetHeaders(tempArgs map[string]any, headers []string) []string {
+	if !tempArgs["passthrough"].(bool) {
+		headers = append(headers, vars.GeoFields...)
+		if tempArgs["use_ti"].(bool) {
+			headers = append(headers, vars.ThreatFields...)
+		}
+		if tempArgs["use_dns"].(bool) {
+			headers = append(headers, vars.DNSFields...)
+		}
+		if tempArgs["use_whois"].(bool) {
+			if tempArgs["use_dns"].(bool) {
+				headers = append(headers, vars.WhoisDomainFields...)
+			}
+			headers = append(headers, vars.WhoisIPFields...)
+		}
+		if tempArgs["use_idb"].(bool) {
+			headers = append(headers, vars.IDBFields...)
+		}
+	}
+	return headers
+}
+
 func ListenOnWriteChannel(c chan []string, w *csv.Writer, logger zerolog.Logger, outputF *os.File, bufferSize int, wait *lbtypes.WaitGroupCount) {
 	// TODO - Consider having pool of routines appending records to slice [][]string and a single reader drawing from this to avoid any bottle-necks
 	// TODO - Consider sending writer in a goroutine with wait group, refilling buffer, etc.
@@ -376,8 +398,6 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		} else {
 			record = append(record, "none", "0", "none")
 		}
-	} else {
-		record = append(record, "NA", "NA", "0")
 	}
 
 	domain := ""
@@ -431,14 +451,14 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 						logger.Error().Msg(setdnserr.Error())
 					}
 				}*/
-	} else {
-		record = append(record, "")
 	}
 	// For TLD
-	if domain == "." || domain == "" {
-		record = append(record, "none")
-	} else {
-		record = append(record, domain)
+	if tempArgs["use_dns"].(bool) {
+		if domain == "." || domain == "" {
+			record = append(record, "none")
+		} else {
+			record = append(record, domain)
+		}
 	}
 
 	// Removing for now as we can get TLD from live DNS if we are using that
@@ -460,7 +480,7 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	// Handling Domain WhoIS lookups if we are using DNS and have a parsed domain with tld for the IP in question
 	if tempArgs["use_whois"].(bool) && domain != "" && domain != "." {
 		record = append(record, DoDomainWhoisenrichment(domain)...)
-	} else {
+	} else if tempArgs["use_whois"].(bool) && tempArgs["use_dns"].(bool) {
 		// no whois used OR domain is invalid
 		record = append(record, "NA", "NA", "NA", "NA")
 	}
@@ -468,14 +488,10 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	// Handling IP Whois lookups
 	if tempArgs["use_whois"].(bool) {
 		record = append(record, DoIPWhoisEnrichment(ipString)...)
-	} else {
-		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
 	}
 
 	if tempArgs["use_idb"].(bool) {
 		record = append(record, DoIDBEnrichment(ipString)...)
-	} else {
-		record = append(record, "NA", "NA", "NA", "NA", "NA")
 	}
 
 	return record

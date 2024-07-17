@@ -92,6 +92,18 @@ func ProcessCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		logger.Error().Msgf("Error Processing File: %v", err.Error())
 		return
 	}
+	if tempArgs["use_ti"].(bool) {
+		headers = append(headers, vars.ThreatFields...)
+	}
+	if tempArgs["use_dns"].(bool) {
+		headers = append(headers, vars.DNSFields...)
+	}
+	if tempArgs["use_whois"].(bool) {
+		if tempArgs["use_dns"].(bool) {
+			headers = append(headers, vars.WhoisDomainFields...)
+		}
+		headers = append(headers, vars.WhoisIPFields...)
+	}
 	if tempArgs["use_idb"].(bool) {
 		headers = append(headers, vars.IDBFields...)
 	}

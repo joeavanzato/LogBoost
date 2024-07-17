@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"github.com/joeavanzato/logboost/helpers"
 	"github.com/joeavanzato/logboost/lbtypes"
-	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -85,12 +84,7 @@ func ParseIISStyle(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxmind
 		dateindex = helpers.FindTargetIndexInSlice(headers, arguments["datecol"].(string))
 	}
 
-	if !tempArgs["passthrough"].(bool) {
-		headers = append(headers, vars.GeoFields...)
-		if tempArgs["use_idb"].(bool) {
-			headers = append(headers, vars.IDBFields...)
-		}
-	}
+	headers = helpers.GetHeaders(tempArgs, headers)
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())

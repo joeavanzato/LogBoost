@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"github.com/joeavanzato/logboost/helpers"
 	"github.com/joeavanzato/logboost/lbtypes"
-	"github.com/joeavanzato/logboost/vars"
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/rs/zerolog"
 	"io"
@@ -164,12 +163,7 @@ func ParseCEF(logger zerolog.Logger, inputFile string, outputFile string, fullPa
 	}
 	// TODO - Sort
 	//sort.Sort(sort.StringSlice(headers))
-	if !tempArgs["passthrough"].(bool) {
-		headers = append(headers, vars.GeoFields...)
-		if tempArgs["use_idb"].(bool) {
-			headers = append(headers, vars.IDBFields...)
-		}
-	}
+	headers = helpers.GetHeaders(tempArgs, headers)
 	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {
 		return err

@@ -48,7 +48,11 @@ var MaxMindFileLocations = map[string]string{
 // Used in func visit to add log paths as we crawl the input directory
 var LogsToProcess = make([]string, 0)
 
-var GeoFields = []string{"lb_IP", "lb_ASN", "lb_ASN_Number", "lb_Country", "lb_City", "lb_ThreatCategories", "lb_ThreatFeedCount", "lb_ThreatFeeds", "lb_Domains", "lb_TLD", "lb_DomainWhois_CreatedDate", "lb_DomainWhois_UpdatedDate", "lb_DomainWhois_Country", "lb_DomainWhois_Organization", "lb_IPWhois_CIDR", "lb_IPWhois_NetName", "lb_IPWhois_NetType", "lb_IPWhois_Organization", "lb_IPWhois_Created", "lb_IPWhois_Updated", "lb_IPWhois_Country", "lb_IPWhois_Parent"}
+var GeoFields = []string{"lb_IP", "lb_ASN", "lb_ASN_Number", "lb_Country", "lb_City"}
+var ThreatFields = []string{"lb_ThreatCategories", "lb_ThreatFeedCount", "lb_ThreatFeeds"}
+var DNSFields = []string{"lb_Domains", "lb_TLD"}
+var WhoisDomainFields = []string{"lb_DomainWhois_CreatedDate", "lb_DomainWhois_UpdatedDate", "lb_DomainWhois_Country", "lb_DomainWhois_Organization"}
+var WhoisIPFields = []string{"lb_IPWhois_CIDR", "lb_IPWhois_NetName", "lb_IPWhois_NetType", "lb_IPWhois_Organization", "lb_IPWhois_Created", "lb_IPWhois_Updated", "lb_IPWhois_Country", "lb_IPWhois_Parent"}
 var IDBFields = []string{"lb_IDB_cpes", "lb_IDB_hostnames", "lb_IDB_ports", "lb_IDB_tags", "lb_IDB_vulns"}
 
 var Ipv6_regex = regexp.MustCompile(`.*?(?P<ip>(([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))).*?`)

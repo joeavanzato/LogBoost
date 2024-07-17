@@ -95,12 +95,7 @@ func ParseKV(logger zerolog.Logger, inputFile string, outputFile string, asnDB m
 	headers = append(headers, kvheaders...)
 	// TODO - Sort
 	//sort.Sort(sort.StringSlice(headers))
-	if !arguments["passthrough"].(bool) {
-		headers = append(headers, vars.GeoFields...)
-		if tempArgs["use_idb"].(bool) {
-			headers = append(headers, vars.IDBFields...)
-		}
-	}
+	headers = helpers.GetHeaders(tempArgs, headers)
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())

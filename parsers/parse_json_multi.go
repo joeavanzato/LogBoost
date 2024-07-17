@@ -180,12 +180,7 @@ func ParseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 	// Sort JSONKeys alphabetically
 	//sort.Sort(sort.StringSlice(headers))
 
-	if !arguments["passthrough"].(bool) {
-		headers = append(headers, vars.GeoFields...)
-		if tempArgs["use_idb"].(bool) {
-			headers = append(headers, vars.IDBFields...)
-		}
-	}
+	headers = helpers.GetHeaders(tempArgs, headers)
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
