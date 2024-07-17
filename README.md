@@ -14,6 +14,8 @@ The tool can also perform reverse lookups on each IP address detected in the sou
 
 On top of this, LogBoost can download text-based threat intelligence as configured in feed_config.json and parse these into a local SQLite DB which is then used to further enrich detected IP addresses with indicator matches.
 
+Additionally, LogBoost is capable of live querying both WhoIs servers for IP addresses/Domains as well as Shodan InternetDB to provide additional enrichment detail for analysts.
+
 All in - LogBoost can convert a variety of log formats to CSV while enriching IP addresses with ASN Org/Number, Country, City, Domains and Indicator Match Information.
 
 **Wiki: https://github.com/joeavanzato/LogBoost/wiki**
