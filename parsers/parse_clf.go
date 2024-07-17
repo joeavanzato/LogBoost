@@ -68,6 +68,9 @@ func ParseCLF(logger zerolog.Logger, inputFile string, outputFile string, asnDB 
 
 	if !tempArgs["passthrough"].(bool) {
 		headers = append(headers, vars.GeoFields...)
+		if tempArgs["use_idb"].(bool) {
+			headers = append(headers, vars.IDBFields...)
+		}
 	}
 	outputF, err := helpers.CreateOutput(outputFile)
 	if err != nil {

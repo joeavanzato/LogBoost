@@ -182,6 +182,9 @@ func ParseMultiLineJSON(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB ma
 
 	if !arguments["passthrough"].(bool) {
 		headers = append(headers, vars.GeoFields...)
+		if tempArgs["use_idb"].(bool) {
+			headers = append(headers, vars.IDBFields...)
+		}
 	}
 	err = writer.Write(headers)
 	if err != nil {

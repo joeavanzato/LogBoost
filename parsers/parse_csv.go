@@ -92,6 +92,9 @@ func ProcessCSV(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.
 		logger.Error().Msgf("Error Processing File: %v", err.Error())
 		return
 	}
+	if tempArgs["use_idb"].(bool) {
+		headers = append(headers, vars.IDBFields...)
+	}
 
 	newParse, newWrite, NewInputF, NewOutputF, err := helpers.GetNewPW(logger, inputFile, outputFile)
 	defer NewInputF.Close()

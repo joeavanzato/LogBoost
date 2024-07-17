@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/joeavanzato/logboost/lbtypes"
 	tldparser "github.com/joeavanzato/logboost/tldparserr"
@@ -456,97 +457,163 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 			record = append(record, "NA")
 		}*/
 
-	// Handling Domain WhoIS lookups if we are using DNS and have a parsed domain with tld
+	// Handling Domain WhoIS lookups if we are using DNS and have a parsed domain with tld for the IP in question
 	if tempArgs["use_whois"].(bool) && domain != "" && domain != "." {
-		// "lb_DomainWhois_CreatedDate", "lb_DomainWhois_UpdatedDate", "lb_DomainWhois_Country", "lb_DomainWhois_Organization"
-		//u, _ := tld.Parse(dnsRecords[i])
-		//domain := fmt.Sprintf("%s.%s", u.Domain, u.TLD)
-		// Check for cached data using this domain
-		_value := make([]byte, 0)
-		cacheValue, _existsInCache := vars.Whoisfastcache.HasGet(_value, []byte(domain))
-		if _existsInCache {
-			// If it exists, check if it was stored with an error and it not, parse it out and append the values
-			if string(cacheValue) == "error" {
-				record = append(record, "err", "err", "err", "err")
-			} else {
-				whoisData := strings.Split(string(cacheValue), "|")
-				record = append(record, whoisData...)
-			}
-		} else {
-			// Domain Does not exist in cache yet
-			result2, whoiserr := Whois(domain)
-			if whoiserr != nil {
-				vars.Whoisfastcache.Set([]byte(domain), []byte("error"))
-				record = append(record, "err", "err", "err", "err")
-			} else {
-				// Set cache
-				parsedresult, parseerr := whoisparser.Parse(result2)
-				if parseerr == nil {
-					whoIsData := make([]string, 0)
-					if parsedresult.Domain != nil {
-						whoIsData = append(whoIsData, parsedresult.Domain.CreatedDate, parsedresult.Domain.UpdatedDate)
-					} else {
-						whoIsData = append(whoIsData, "NA", "NA")
-					}
-					if parsedresult.Registrant != nil {
-						whoIsData = append(whoIsData, parsedresult.Registrant.Country, parsedresult.Registrant.Organization)
-					} else {
-						whoIsData = append(whoIsData, "NA", "NA")
-					}
-					record = append(record, whoIsData...)
-					vars.Whoisfastcache.Set([]byte(domain), []byte(strings.Join(whoIsData, "|")))
-				} else {
-					vars.Whoisfastcache.Set([]byte(domain), []byte("error"))
-					record = append(record, "err", "err", "err", "err")
-				}
-			}
-		}
+		record = append(record, DoDomainWhoisenrichment(domain)...)
 	} else {
 		// no whois used OR domain is invalid
 		record = append(record, "NA", "NA", "NA", "NA")
 	}
 
 	// Handling IP Whois lookups
-	// This is pretty slow - probably will adopt just specific source code from the current used library to streamline this
 	if tempArgs["use_whois"].(bool) {
-		value := make([]byte, 0)
-		cacheValue, existsInCache := vars.Whoisfastcache.HasGet(value, []byte(ipString))
-		if existsInCache {
-			if string(cacheValue) == "error" {
-				record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
-			} else {
-				parsedResult, parseerr := ParseIPWhoisLookup(string(cacheValue))
-				if parseerr == nil {
-					// "lb_Whois_CIDR", "lb_Whois_NetName", "lb_Whois_NetType", "lb_Whois_Organization", "lb_Whois_Created", "lb_Whois_Updated", "lb_Whois_Organization", "lb_Whois_Country", "lb_Whois_Parent"
-					record = append(record, parsedResult.CIDR, parsedResult.NetName, parsedResult.NetType, parsedResult.Customer, parsedResult.RegistrationDate, parsedResult.RegistrationUpdated, parsedResult.Country, parsedResult.Parent)
-					//recordsJoined := strings.Join(dnsRecords, "|")
-				} else {
-					record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
-				}
-			}
-		} else {
-			//result2, whoiserr := whois.Whois(ipString)
-			// IP Does not exist in cache yet
-			result2, whoiserr := Whois(ipString)
-			if result2 == "" {
-				vars.Whoisfastcache.Set([]byte(ipString), []byte("error"))
-			} else {
-				vars.Whoisfastcache.Set([]byte(ipString), []byte(result2))
-			}
-			if whoiserr == nil {
-				parsedResult, parseerr := ParseIPWhoisLookup(result2)
-				if parseerr == nil {
-					// "lb_Whois_CIDR", "lb_Whois_NetName", "lb_Whois_NetType", "lb_Whois_Organization", "lb_Whois_Created", "lb_Whois_Updated", "lb_Whois_Organization", "lb_Whois_Country", "lb_Whois_Parent"
-					record = append(record, parsedResult.CIDR, parsedResult.NetName, parsedResult.NetType, parsedResult.Customer, parsedResult.RegistrationDate, parsedResult.RegistrationUpdated, parsedResult.Country, parsedResult.Parent)
-					//recordsJoined := strings.Join(dnsRecords, "|")
-				} else {
-					record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
-				}
-			}
-		}
+		record = append(record, DoIPWhoisEnrichment(ipString)...)
+	} else {
+		record = append(record, "NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA")
+	}
+
+	if tempArgs["use_idb"].(bool) {
+		record = append(record, DoIDBEnrichment(ipString)...)
+	} else {
+		record = append(record, "NA", "NA", "NA", "NA", "NA")
 	}
 
 	return record
+}
+
+// IntSlicetoStringSlice converts a slice of ints to a slice of the same length but of type string
+func IntSlicetoStringSlice(s []int) []string {
+	os := make([]string, len(s))
+	for k, v := range s {
+		os[k] = strconv.Itoa(v)
+	}
+	return os
+}
+
+// DoIDBEnrichment returns a slice representing enrichments from Shodan's InternetDB project using the provided IP Address as the enrichment target.
+func DoIDBEnrichment(ipaddress string) []string {
+	_value := make([]byte, 0)
+	cacheValue, _existsInCache := vars.IDBfastcache.HasGet(_value, []byte(ipaddress))
+	errorString := []string{"err", "err", "err", "err", "err"}
+	if _existsInCache {
+		if string(cacheValue) == "error" {
+			return errorString
+		} else {
+			idbData := strings.Split(string(cacheValue), "&&")
+			return idbData
+		}
+	}
+	resp, err := IDB_Http_Client.Get(fmt.Sprintf("https://internetdb.shodan.io/%s", ipaddress))
+	if err != nil {
+		vars.IDBfastcache.Set([]byte(ipaddress), []byte("error"))
+		return errorString
+	}
+	defer resp.Body.Close()
+	if err != nil {
+		vars.IDBfastcache.Set([]byte(ipaddress), []byte("error"))
+		return errorString
+	}
+	dec := json.NewDecoder(resp.Body)
+	dec.DisallowUnknownFields()
+	var p lbtypes.ShodanIDBResponse
+	err = dec.Decode(&p)
+	if err != nil {
+		vars.IDBfastcache.Set([]byte(ipaddress), []byte("error"))
+		return errorString
+	}
+	idbdata := make([]string, 0)
+	idbdata = append(idbdata, strings.Join(p.Cpes, "|"), strings.Join(p.Hostnames, "|"), strings.Join(IntSlicetoStringSlice(p.Ports), "|"), strings.Join(p.Tags, "|"), strings.Join(p.Vulns, "|"))
+	vars.IDBfastcache.Set([]byte(ipaddress), []byte(strings.Join(idbdata, "&&")))
+	return idbdata
+}
+
+// DoDomainWhoisenrichment returns a slice representing enrichments from a Domain-based WhoIS lookup.
+func DoDomainWhoisenrichment(domain string) []string {
+	// "lb_DomainWhois_CreatedDate", "lb_DomainWhois_UpdatedDate", "lb_DomainWhois_Country", "lb_DomainWhois_Organization"
+	//u, _ := tld.Parse(dnsRecords[i])
+	//domain := fmt.Sprintf("%s.%s", u.Domain, u.TLD)
+	// Check for cached data using this domain
+	_value := make([]byte, 0)
+	cacheValue, _existsInCache := vars.Whoisfastcache.HasGet(_value, []byte(domain))
+	if _existsInCache {
+		// If it exists, check if it was stored with an error and it not, parse it out and append the values
+		if string(cacheValue) == "error" {
+			return []string{"err", "err", "err", "err"}
+		} else {
+			whoisData := strings.Split(string(cacheValue), "|")
+			return whoisData
+		}
+	} else {
+		// Domain Does not exist in cache yet
+		result2, whoiserr := Whois(domain)
+		if whoiserr != nil {
+			vars.Whoisfastcache.Set([]byte(domain), []byte("error"))
+			return []string{"err", "err", "err", "err"}
+		} else {
+			// Set cache
+			parsedresult, parseerr := whoisparser.Parse(result2)
+			if parseerr == nil {
+				whoIsData := make([]string, 0)
+				if parsedresult.Domain != nil {
+					whoIsData = append(whoIsData, parsedresult.Domain.CreatedDate, parsedresult.Domain.UpdatedDate)
+				} else {
+					whoIsData = append(whoIsData, "NA", "NA")
+				}
+				if parsedresult.Registrant != nil {
+					whoIsData = append(whoIsData, parsedresult.Registrant.Country, parsedresult.Registrant.Organization)
+				} else {
+					whoIsData = append(whoIsData, "NA", "NA")
+				}
+				vars.Whoisfastcache.Set([]byte(domain), []byte(strings.Join(whoIsData, "|")))
+				return whoIsData
+			} else {
+				vars.Whoisfastcache.Set([]byte(domain), []byte("error"))
+				return []string{"err", "err", "err", "err"}
+			}
+		}
+	}
+	return []string{"NA", "NA", "NA", "NA"}
+}
+
+// DoIPWhoisEnrichment returns a slice representing enrichments from an IP-based WhoIS lookup.
+func DoIPWhoisEnrichment(ipaddress string) []string {
+	// This is pretty slow - probably will adopt just specific source code from the current used library to streamline this
+	value := make([]byte, 0)
+	cacheValue, existsInCache := vars.Whoisfastcache.HasGet(value, []byte(ipaddress))
+	if existsInCache {
+		if string(cacheValue) == "error" {
+			return []string{"NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA"}
+		} else {
+			parsedResult, parseerr := ParseIPWhoisLookup(string(cacheValue))
+			if parseerr == nil {
+				// "lb_Whois_CIDR", "lb_Whois_NetName", "lb_Whois_NetType", "lb_Whois_Organization", "lb_Whois_Created", "lb_Whois_Updated", "lb_Whois_Organization", "lb_Whois_Country", "lb_Whois_Parent"
+				return []string{parsedResult.CIDR, parsedResult.NetName, parsedResult.NetType, parsedResult.Customer, parsedResult.RegistrationDate, parsedResult.RegistrationUpdated, parsedResult.Country, parsedResult.Parent}
+				//recordsJoined := strings.Join(dnsRecords, "|")
+			} else {
+				return []string{"NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA"}
+			}
+		}
+	} else {
+		//result2, whoiserr := whois.Whois(ipString)
+		// IP Does not exist in cache yet
+		result2, whoiserr := Whois(ipaddress)
+		if result2 == "" {
+			vars.Whoisfastcache.Set([]byte(ipaddress), []byte("error"))
+		} else {
+			vars.Whoisfastcache.Set([]byte(ipaddress), []byte(result2))
+		}
+		if whoiserr == nil {
+			parsedResult, parseerr := ParseIPWhoisLookup(result2)
+			if parseerr == nil {
+				// "lb_Whois_CIDR", "lb_Whois_NetName", "lb_Whois_NetType", "lb_Whois_Organization", "lb_Whois_Created", "lb_Whois_Updated", "lb_Whois_Organization", "lb_Whois_Country", "lb_Whois_Parent"
+				return []string{parsedResult.CIDR, parsedResult.NetName, parsedResult.NetType, parsedResult.Customer, parsedResult.RegistrationDate, parsedResult.RegistrationUpdated, parsedResult.Country, parsedResult.Parent}
+				//recordsJoined := strings.Join(dnsRecords, "|")
+			} else {
+				return []string{"NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA"}
+			}
+		}
+	}
+	return []string{"NA", "NA", "NA", "NA", "NA", "NA", "NA", "NA"}
 }
 
 type IPWhoisResult struct {
@@ -639,7 +706,9 @@ func ParseIPWhoisLookup(data string) (IPWhoisResult, error) {
 		} else if strings.HasPrefix(v, "RegDate:") {
 			result.RegistrationDate = value
 		} else if strings.HasPrefix(v, "Updated:") {
-			result.AddressUpdated = value
+			if value != "" {
+				result.AddressUpdated = value
+			}
 		} else if strings.HasPrefix(v, "OrgNOCHandle:") {
 		} else if strings.HasPrefix(v, "OrgNOCName:") {
 			result.OrgNOCName = value

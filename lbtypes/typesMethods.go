@@ -49,6 +49,19 @@ type DBRefs struct {
 	ASN     *maxminddb.Reader
 }
 
+// IDB Data Struct
+type ShodanIDBResponse struct {
+	Cpes      []string `json:"cpes"`
+	Hostnames []string `json:"hostnames"`
+	IP        string   `json:"ip"`
+	Ports     []int    `json:"ports"`
+	Tags      []string `json:"tags"`
+	Vulns     []string `json:"vulns"`
+}
+type ShodanIDBResponseFail struct {
+	Detail string `json:"detail"`
+}
+
 // TODO - Put lock and map in single struct for organization - then refactor CheckIP and AddIP to just take the original cachemap struct
 var IPCacheMap = make(map[string]IPCache)
 var IPCacheMapLock = sync.RWMutex{}

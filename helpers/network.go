@@ -24,6 +24,8 @@ var resolver = &net.Resolver{
 	},
 }
 
+var IDB_Http_Client = http.Client{Timeout: time.Duration(2) * time.Second}
+
 func SetupPrivateNetworks() error {
 	for _, cidr := range []string{
 		"127.0.0.0/8",    // IPv4 loopback

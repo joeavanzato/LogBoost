@@ -28,6 +28,9 @@ func ParseRaw(logger zerolog.Logger, asnDB maxminddb.Reader, cityDB maxminddb.Re
 	headers := make([]string, 0)
 	headers = append(headers, "line")
 	headers = append(headers, vars.GeoFields...)
+	if tempArgs["use_idb"].(bool) {
+		headers = append(headers, vars.IDBFields...)
+	}
 	err = writer.Write(headers)
 	if err != nil {
 		logger.Error().Msg(err.Error())
