@@ -45,6 +45,7 @@ func CheckJSON(logger zerolog.Logger, file string, fullParse bool) (bool, []stri
 			var result map[string]any
 			jsonErr := json.Unmarshal([]byte(line), &result)
 			if jsonErr != nil {
+				logger.Error().Msgf("Error Parsing JSON: %s", jsonErr)
 				return false, keys, jsonErr
 			}
 			for k, v := range result {
