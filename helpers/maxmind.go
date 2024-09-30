@@ -59,6 +59,7 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger, apikey string
 				}
 			}
 		} else {
+			// TODO - Support Cross-Platform Compilation
 			logger.Info().Msgf("Could not find %v DB at %v\\%v, downloading!", k, dir, vars.MaxMindFiles[k])
 			if k == "Domain" {
 				logger.Info().Msg("Skipping Domain DB Update")
@@ -81,6 +82,7 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string, apikey string) e
 	}
 	user := strings.Split(apikey, ":")[0]
 	password := strings.Split(apikey, ":")[1]
+	// TODO - Support Cross-Platform Compilation
 	gzFile := fmt.Sprintf("%v\\%v.tar.gz", dir, k)
 	// Download It First
 	// TODO - Uncomment when done testing
@@ -106,6 +108,7 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string, apikey string) e
 	}
 	r.Close()
 	// Once we extract, we need to find the actual mmdb file which will be located within a newly created directory of the naming format GeoLite2-KEY_*
+	// TODO - Support Cross-Platform Compilation
 	globPattern := fmt.Sprintf("%v\\GeoLite2-%v_*\\GeoLite2-%v.mmdb", dir, k, k)
 	file, err := filepath.Glob(globPattern)
 	if err != nil {
@@ -126,7 +129,7 @@ func updateMaxMind(logger zerolog.Logger, dir string, k string, apikey string) e
 	if err != nil {
 		logger.Error().Msgf("Error Removing Temp Zip: %v", err.Error())
 	}
-
+	// TODO - Support Cross-Platform Compilation
 	tempDirPattern := fmt.Sprintf("%v\\GeoLite2-%v_*", dir, k)
 	dirlist, err := filepath.Glob(tempDirPattern)
 	if err != nil {

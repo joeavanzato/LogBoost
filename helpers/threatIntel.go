@@ -168,6 +168,7 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 		go func() {
 			waiter.Add(1)
 			defer waiter.Done()
+			// TODO - Support Cross-Platform Compilation
 			destFile := fmt.Sprintf("%v\\%v.txt", intelDir, feeds.Feeds[i].Name)
 			Derr := DownloadFile(logger, feeds.Feeds[i].URL, destFile, "")
 			if Derr != nil {
@@ -259,6 +260,7 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 			continue
 		}
 		//err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
+		// TODO - Support Cross-Platform Compilation
 		err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), strings.Join(typeMap[baseNameWithoutExtension], ","), feedidMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -422,6 +424,7 @@ func CheckIPinTI(ip string, isDataCenter bool, db *sql.DB) (string, string, stri
 
 func IngestIPNetLists(url string, name string, file string, listtype string, category string, logger zerolog.Logger) {
 
+	// TODO - Support Cross-Platform Compilation
 	dest := fmt.Sprintf("%v\\%v", intelDir, file)
 	dlerr := DownloadFile(logger, url, dest, "")
 	if dlerr != nil {

@@ -229,11 +229,13 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 			continue
 		}
 		inputFile := file
+		// TODO - Support Cross-Platform Compilation
 		remainderPathSplit := strings.SplitN(filepath.Dir(file), fmt.Sprintf("%v\\", arguments["logdir"].(string)), 2)
 		remainderPath := ""
 		outputPath := ""
 		if len(remainderPathSplit) == 2 {
 			remainderPath = remainderPathSplit[1]
+			// TODO - Support Cross-Platform Compilation
 			outputPath = fmt.Sprintf("%v\\%v", outputDir, remainderPath)
 		} else {
 			outputPath = outputDir
@@ -246,7 +248,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 
 		baseFile := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		baseFile += ".csv"
-
+		// TODO - Support Cross-Platform Compilation
 		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
 
 		if jobTracker.GetJobs() >= maxConcurrentFiles {

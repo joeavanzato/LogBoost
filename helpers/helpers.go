@@ -151,6 +151,7 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
+			// TODO - Support Cross-Platform Compilation
 			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
 			err := os.MkdirAll(targetDir, 0755)
 			if err != nil {
@@ -161,6 +162,7 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 				}
 			}
 		case tar.TypeReg:
+			// TODO - Support Cross-Platform Compilation
 			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
 			outFile, err := os.Create(targetDir)
 			if err != nil {
