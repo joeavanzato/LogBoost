@@ -665,6 +665,7 @@ type IPWhoisResult struct {
 	OrgAbuseEmail       string
 }
 
+// ParseIPWhoisLookup parses the raw results of a Whois lookup against an IP Address
 func ParseIPWhoisLookup(data string) (IPWhoisResult, error) {
 	var dataSplit = strings.Split(strings.ReplaceAll(data, "\r\n", "\n"), "\n")
 	var result = IPWhoisResult{
