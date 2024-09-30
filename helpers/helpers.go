@@ -276,13 +276,19 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 
 	//result := make(map[string]interface{})
 	//err := json.Unmarshal([]byte(jsonBlob), &result)
-	results := map[string]string{}
+	//results := map[string]string{}
 	match := vars.AuditLogIPRegex.FindStringSubmatch(jsonBlob)
 	if match != nil {
 		for i, name := range match {
 			results[vars.AuditLogIPRegex.SubexpNames()[i]] = name
 		}
 		return results["ClientIP"]
+		return match[len(match)-1]
+		//results[vars.AuditLogIPRegex.SubexpNames()[len(match)-1]] = match[len(match)-1]
+		/*		for i, name := range match {
+					results[vars.AuditLogIPRegex.SubexpNames()[i]] = name
+				}
+			return results["ClientIP"]*/
 	}
 	return ""
 	//return net.ParseIP(results["ClientIP"])
