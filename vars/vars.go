@@ -11,7 +11,7 @@ const LogFile = "logboost.log"
 
 var ExtraKeysColumnName = "EXTRA_KEYS"
 
-var AuditLogIPRegex = regexp.MustCompile(`.*ClientIP":"(?P<ClientIP>.*?)",.*`)
+var AuditLogIPRegex = regexp.MustCompile(`.*(ClientIP|ClientIPAddress)":"(?P<ClientIP>.*?)",.*`)
 
 var GeoLiteASNDBURL = ""
 var GeoLiteCityDBURL = ""
