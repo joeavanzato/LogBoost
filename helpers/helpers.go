@@ -753,6 +753,7 @@ func ParseIPWhoisLookup(data string) (IPWhoisResult, error) {
 	return result, nil
 }
 
+// CombineOutputs works to combine all CSV outputs on a per-directory level, trying to match header columns if possible
 func CombineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 	logger.Info().Msg("Combining Outputs per Directory")
 	logger.Info().Msg("Note: The first file in each directory will provide the headers for all subsequent files - any mismatched columns will be dropped from subsequent files.")
@@ -813,6 +814,7 @@ func CombineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 	return nil
 }
 
+// combineWriterListen is a helper function used for writing combination outputs to disk
 func combineWriterListen(outputF *os.File, writer *csv.Writer, c chan []string, logger zerolog.Logger, MainWaiter *sync.WaitGroup) {
 	// Will receive a handle to a pre-setup CSV writer and listen on a channel for incoming records to write, breaking when the channel is closed.
 	defer MainWaiter.Done()
@@ -836,6 +838,7 @@ func combineWriterListen(outputF *os.File, writer *csv.Writer, c chan []string, 
 
 }
 
+// RegexFirstPublicIPFromString attempts to use regex patterns to extract the first-identified non-private IP address from a string
 func RegexFirstPublicIPFromString(input string) (string, bool) {
 	// Searches a string input for a public IPv4/IPv6 - returns the IP and true if found or nil and false if not.
 	// If we find more than 1 match, check for first non-private IP
@@ -881,6 +884,7 @@ func RegexFirstPublicIPFromString(input string) (string, bool) {
 	return "", false
 }
 
+// FileToSlice reads a file and returns a slice representing lines in the file
 func FileToSlice(filename string, logger zerolog.Logger) []string {
 	file, err := os.Open(filename)
 	defer file.Close()
@@ -905,6 +909,7 @@ func FileToSlice(filename string, logger zerolog.Logger) []string {
 	//reader := bufio.NewReader(file)
 }
 
+// FindTargetIndexInSlice receives a string-slice and attempts to locate a specific value, returning the index of said value if it exists of -1 if not.
 func FindTargetIndexInSlice(headers []string, targetCol string) int {
 	// Check a slice for a target string - if it exists, return the index, otherwise, -1
 	for i, v := range headers {
@@ -916,6 +921,7 @@ func FindTargetIndexInSlice(headers []string, targetCol string) int {
 	return -1
 }
 
+// CloseChannelWhenDone is a helper function for handling channel closure with a wait-group.
 func CloseChannelWhenDone(c chan []string, wg *lbtypes.WaitGroupCount) {
 	// Waits on a WaitGroup to conclude and closes the associated channel when done - used to synchronize waitgroups sending to a channel
 	wg.Wait()
