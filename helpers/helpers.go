@@ -279,10 +279,6 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 	//results := map[string]string{}
 	match := vars.AuditLogIPRegex.FindStringSubmatch(jsonBlob)
 	if match != nil {
-		for i, name := range match {
-			results[vars.AuditLogIPRegex.SubexpNames()[i]] = name
-		}
-		return results["ClientIP"]
 		return match[len(match)-1]
 		//results[vars.AuditLogIPRegex.SubexpNames()[len(match)-1]] = match[len(match)-1]
 		/*		for i, name := range match {
@@ -406,35 +402,12 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 		}
 	}
 
+	// DNS Enrichment
 	domain := ""
+	recordValue := ""
 	if useDNS {
-		// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
-		// TODO - Consider adding DomainCount column
-		//records, dnsExists := CheckIPDNS(ipString)
-
-		// fastcache implementation
-
-		// TODO - Implement whois check here for found domains
-		value := make([]byte, 0)
-
-		value, existsInCache := vars.Dnsfastcache.HasGet(value, []byte(ipString))
-		if existsInCache {
-			record = append(record, string(value))
-			dnsRecords := strings.Split(string(value), "|")
-			_, m, td := tldparser.ParseDomain(dnsRecords[0])
-			domain = fmt.Sprintf("%s.%s", m, td)
-		} else {
-			dnsRecords := LookupIPRecords(ipString)
-			for i, v := range dnsRecords {
-				dnsRecords[i] = strings.TrimSuffix(strings.TrimSpace(v), ".")
-			}
-			_, m, td := tldparser.ParseDomain(dnsRecords[0])
-			domain = fmt.Sprintf("%s.%s", m, td)
-			record = append(record, strings.Join(dnsRecords, "|"))
-			recordsJoined := strings.Join(dnsRecords, "|")
-			vars.Dnsfastcache.Set([]byte(ipString), []byte(recordsJoined))
-
-		}
+		recordValue, domain = DoDNSEnrichment(ipString)
+		record = append(record, recordValue)
 		// Below uses bigcache implementation
 		/*		entry, dnscacheerr := dnscache.Get(ipString)
 				if dnscacheerr == nil {
@@ -458,7 +431,8 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 					}
 				}*/
 	}
-	// For TLD
+
+	// Populating TLD Column
 	if tempArgs["use_dns"].(bool) {
 		if domain == "." || domain == "" {
 			record = append(record, "none")
@@ -501,6 +475,31 @@ func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader
 	}
 
 	return record
+}
+
+// DoDNSEnrichment provides all current hostname records associated with a Domain along with the base hostname+tld, if any exist
+func DoDNSEnrichment(ipaddress string) (string, string) {
+	// TODO - Find a better way to represent domains - maybe just encode JSON style in the column?
+	// TODO - Consider adding DomainCount column
+	value := make([]byte, 0)
+	domain := ""
+	value, existsInCache := vars.Dnsfastcache.HasGet(value, []byte(ipaddress))
+	if existsInCache {
+		dnsRecords := strings.Split(string(value), "|")
+		_, m, td := tldparser.ParseDomain(dnsRecords[0])
+		domain = fmt.Sprintf("%s.%s", m, td)
+		return string(value), domain
+	} else {
+		dnsRecords := LookupIPRecords(ipaddress)
+		for i, v := range dnsRecords {
+			dnsRecords[i] = strings.TrimSuffix(strings.TrimSpace(v), ".")
+		}
+		_, m, td := tldparser.ParseDomain(dnsRecords[0])
+		domain = fmt.Sprintf("%s.%s", m, td)
+		recordsJoined := strings.Join(dnsRecords, "|")
+		vars.Dnsfastcache.Set([]byte(ipaddress), []byte(recordsJoined))
+		return recordsJoined, domain
+	}
 }
 
 // IntSlicetoStringSlice converts a slice of ints to a slice of the same length but of type string
