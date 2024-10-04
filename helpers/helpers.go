@@ -496,8 +496,14 @@ func DoDNSEnrichment(ipaddress string) (string, string) {
 		for i, v := range dnsRecords {
 			dnsRecords[i] = strings.TrimSuffix(strings.TrimSpace(v), ".")
 		}
-		_, m, td := tldparser.ParseDomain(dnsRecords[0])
-		domain = fmt.Sprintf("%s.%s", m, td)
+		if len(dnsRecords) == 0 {
+			dnsRecords = append(dnsRecords, "none")
+		}
+		domain := ""
+		if dnsRecords[0] != "none" {
+			_, m, td := tldparser.ParseDomain(dnsRecords[0])
+			domain = fmt.Sprintf("%s.%s", m, td)
+		}
 		recordsJoined := strings.Join(dnsRecords, "|")
 		vars.Dnsfastcache.Set([]byte(ipaddress), []byte(recordsJoined))
 		return recordsJoined, domain
