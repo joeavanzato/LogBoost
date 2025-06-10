@@ -486,6 +486,11 @@
 			"name": "viriback_c2_tracker",
 			"url": "https://tracker.viriback.com/dump.php",
 			"type": ["c2"]
+		},
+		{
+			"name": "javanzato_recent_c2",
+			"url": "https://raw.githubusercontent.com/joeavanzato/recent_c2_infrastructure/refs/heads/main/c2_data.csv",
+			"type": ["c2"]
 		}
 	]
 }
