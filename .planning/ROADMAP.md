@@ -30,8 +30,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: Create feature branch and fix path construction in main.go
-- [ ] 01-02: Fix file discovery and output path generation in main.go
+- [ ] 01-01-PLAN.md -- Create feature/cross-platform branch and apply cosmetic path cleanups (help text, dead code)
+- [ ] 01-02-PLAN.md -- Refactor critical path logic with filepath.Rel() and filepath.Join(), verify build
 
 ### Phase 2: Helper Path Fixes
 **Goal**: All enrichment helpers (MaxMind, threat intel, DNS/WHOIS/IDB caches) use platform-agnostic paths
