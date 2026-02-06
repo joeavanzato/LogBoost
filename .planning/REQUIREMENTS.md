@@ -47,23 +47,23 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PATH-01 | — | Pending |
-| PATH-02 | — | Pending |
-| PATH-03 | — | Pending |
-| PATH-04 | — | Pending |
-| DBPATH-01 | — | Pending |
-| DBPATH-02 | — | Pending |
-| DBPATH-03 | — | Pending |
-| DBPATH-04 | — | Pending |
-| BUILD-01 | — | Pending |
-| BUILD-02 | — | Pending |
-| BUILD-03 | — | Pending |
+| PATH-01 | Phase 1 | Pending |
+| PATH-02 | Phase 1 | Pending |
+| PATH-03 | Phase 1 | Pending |
+| PATH-04 | Phase 1 | Pending |
+| DBPATH-01 | Phase 2 | Pending |
+| DBPATH-02 | Phase 2 | Pending |
+| DBPATH-03 | Phase 2 | Pending |
+| DBPATH-04 | Phase 2 | Pending |
+| BUILD-01 | Phase 3 | Pending |
+| BUILD-02 | Phase 3 | Pending |
+| BUILD-03 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11
+- Mapped to phases: 11
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-05 after initial definition*
+*Last updated: 2026-02-05 after roadmap creation*
