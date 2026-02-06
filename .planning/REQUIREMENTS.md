@@ -21,9 +21,9 @@
 
 ### Build & Verify
 
-- [ ] **BUILD-01**: Code compiles with `GOOS=linux GOARCH=amd64 go build`
-- [ ] **BUILD-02**: Existing tests pass on Linux (WSL)
-- [ ] **BUILD-03**: End-to-end run processes a sample log file on Linux (WSL)
+- [x] **BUILD-01**: Code compiles with `GOOS=linux GOARCH=amd64 go build`
+- [x] **BUILD-02**: Existing tests pass on Linux (WSL)
+- [x] **BUILD-03**: End-to-end run processes a sample log file on Linux (WSL)
 
 ## v2 Requirements
 
@@ -55,9 +55,9 @@
 | DBPATH-02 | Phase 2 | Complete |
 | DBPATH-03 | Phase 2 | Complete |
 | DBPATH-04 | Phase 2 | Complete |
-| BUILD-01 | Phase 3 | Pending |
-| BUILD-02 | Phase 3 | Pending |
-| BUILD-03 | Phase 3 | Pending |
+| BUILD-01 | Phase 3 | Complete |
+| BUILD-02 | Phase 3 | Complete |
+| BUILD-03 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 11 total
@@ -66,4 +66,4 @@
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-06 after Phase 2 completion*
+*Last updated: 2026-02-06 after Phase 3 completion (milestone complete)*
