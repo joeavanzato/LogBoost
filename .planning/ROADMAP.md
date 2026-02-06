@@ -59,7 +59,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 03-01: Cross-compile, run tests in WSL, and verify end-to-end processing
+- [ ] 03-01-PLAN.md -- Cross-compile, verify test parity (Windows vs WSL), and compare end-to-end output
 
 ## Progress
 
