@@ -24,7 +24,7 @@ import (
 func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
 	logDir := flag.String("logdir", "input", "Directory containing 1 or files to process")
-	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD\\output'")
+	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD/output'")
 	column := flag.String("ipcol", "IP address", "Will check for a column with this name to find IP addresses for enrichment. (Defaults to 'IP Address' per Azure defaults)")
 	jsoncolumn := flag.String("jsoncol", "AuditData", "Will check for a column with this name to find the JSON Audit blob for enrichment. (Defaults to 'AuditData' per Azure defaults)")
 	regex := flag.Bool("regex", false, "If enabled, will use regex against the entire line to find the first IP address present to enrich")
@@ -149,8 +149,6 @@ func findLogsToProcess(arguments map[string]any, logger zerolog.Logger) ([]strin
 		logger.Error().Msgf("Could not find directory: %v", logDir)
 		return make([]string, 0), err
 	}
-	//globPattern := fmt.Sprintf("%v\\*.csv", logDir)
-	//entries, err := filepath.Glob(globPattern)
 	err = filepath.WalkDir(logDir, visit)
 	if err != nil {
 		logger.Error().Msg(err.Error())
