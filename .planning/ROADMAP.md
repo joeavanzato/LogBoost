@@ -45,8 +45,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: Fix MaxMind and threat intel database paths
-- [ ] 02-02: Fix cache file paths and sweep helpers/ for remaining hardcoded separators
+- [ ] 02-01-PLAN.md -- Fix MaxMind and threat intel database paths with filepath.Join
+- [ ] 02-02-PLAN.md -- Fix helpers.go paths and sweep helpers/ for remaining hardcoded separators
 
 ### Phase 3: Build and Verify
 **Goal**: LogBoost compiles for Linux and runs end-to-end on a Linux filesystem
