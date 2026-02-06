@@ -168,8 +168,7 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 		go func() {
 			waiter.Add(1)
 			defer waiter.Done()
-			// TODO - Support Cross-Platform Compilation
-			destFile := fmt.Sprintf("%v\\%v.txt", intelDir, feeds.Feeds[i].Name)
+				destFile := filepath.Join(intelDir, feeds.Feeds[i].Name+".txt")
 			Derr := DownloadFile(logger, feeds.Feeds[i].URL, destFile, "")
 			if Derr != nil {
 				logger.Error().Msgf("Error Getting File from %v: %v ", feeds.Feeds[i].URL, Derr.Error())
@@ -259,9 +258,7 @@ func ingestIntel(logger zerolog.Logger, feeds Feeds) error {
 			// Indicates the file is not one we downloaded in this process - some external intel or something else.
 			continue
 		}
-		//err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), typeMap[baseNameWithoutExtension], urlMap[baseNameWithoutExtension], db, logger)
-		// TODO - Support Cross-Platform Compilation
-		err = IngestFile(fmt.Sprintf("%v\\%v", intelDir, e.Name()), strings.Join(typeMap[baseNameWithoutExtension], ","), feedidMap[baseNameWithoutExtension], db, logger)
+		err = IngestFile(filepath.Join(intelDir, e.Name()), strings.Join(typeMap[baseNameWithoutExtension], ","), feedidMap[baseNameWithoutExtension], db, logger)
 		if err != nil {
 			logger.Error().Msg(err.Error())
 		}
@@ -424,8 +421,7 @@ func CheckIPinTI(ip string, isDataCenter bool, db *sql.DB) (string, string, stri
 
 func IngestIPNetLists(url string, name string, file string, listtype string, category string, logger zerolog.Logger) {
 
-	// TODO - Support Cross-Platform Compilation
-	dest := fmt.Sprintf("%v\\%v", intelDir, file)
+	dest := filepath.Join(intelDir, file)
 	dlerr := DownloadFile(logger, url, dest, "")
 	if dlerr != nil {
 		logger.Error().Msgf("Error Updating %v List: %v", listtype, dlerr.Error())
