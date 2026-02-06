@@ -59,7 +59,7 @@ func FindOrGetDBs(arguments map[string]any, logger zerolog.Logger, apikey string
 				}
 			}
 		} else {
-				logger.Info().Msgf("Could not find %v DB at %v, downloading!", k, filepath.Join(dir, vars.MaxMindFiles[k]))
+			logger.Info().Msgf("Could not find %v DB at %v, downloading!", k, filepath.Join(dir, vars.MaxMindFiles[k]))
 			if k == "Domain" {
 				logger.Info().Msg("Skipping Domain DB Update")
 				continue
