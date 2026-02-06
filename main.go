@@ -473,7 +473,6 @@ func test() {
 }
 
 func main() {
-	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
 	//test()
 	//return
 	logger := helpers.SetupLogger()
