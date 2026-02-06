@@ -168,7 +168,7 @@ func updateIntelligence(logger zerolog.Logger, feeds Feeds) error {
 		go func() {
 			waiter.Add(1)
 			defer waiter.Done()
-				destFile := filepath.Join(intelDir, feeds.Feeds[i].Name+".txt")
+			destFile := filepath.Join(intelDir, feeds.Feeds[i].Name+".txt")
 			Derr := DownloadFile(logger, feeds.Feeds[i].URL, destFile, "")
 			if Derr != nil {
 				logger.Error().Msgf("Error Getting File from %v: %v ", feeds.Feeds[i].URL, Derr.Error())
