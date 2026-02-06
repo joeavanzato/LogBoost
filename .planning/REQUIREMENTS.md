@@ -14,10 +14,10 @@
 
 ### Database Paths
 
-- [ ] **DBPATH-01**: MaxMind database file discovery (glob patterns) works on Linux
-- [ ] **DBPATH-02**: MaxMind database download/extraction writes to correct Linux paths
-- [ ] **DBPATH-03**: Threat intelligence database path (`threats.db`) works on Linux
-- [ ] **DBPATH-04**: Cache file paths (`dns.cache`, `whois.cache`, `idb.cache`) work on Linux
+- [x] **DBPATH-01**: MaxMind database file discovery (glob patterns) works on Linux
+- [x] **DBPATH-02**: MaxMind database download/extraction writes to correct Linux paths
+- [x] **DBPATH-03**: Threat intelligence database path (`threats.db`) works on Linux
+- [x] **DBPATH-04**: Cache file paths (`dns.cache`, `whois.cache`, `idb.cache`) work on Linux
 
 ### Build & Verify
 
@@ -51,10 +51,10 @@
 | PATH-02 | Phase 1 | Complete |
 | PATH-03 | Phase 1 | Complete |
 | PATH-04 | Phase 1 | Complete |
-| DBPATH-01 | Phase 2 | Pending |
-| DBPATH-02 | Phase 2 | Pending |
-| DBPATH-03 | Phase 2 | Pending |
-| DBPATH-04 | Phase 2 | Pending |
+| DBPATH-01 | Phase 2 | Complete |
+| DBPATH-02 | Phase 2 | Complete |
+| DBPATH-03 | Phase 2 | Complete |
+| DBPATH-04 | Phase 2 | Complete |
 | BUILD-01 | Phase 3 | Pending |
 | BUILD-02 | Phase 3 | Pending |
 | BUILD-03 | Phase 3 | Pending |
@@ -66,4 +66,4 @@
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-06 after Phase 1 completion*
+*Last updated: 2026-02-06 after Phase 2 completion*

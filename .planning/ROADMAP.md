@@ -13,7 +13,7 @@ LogBoost currently hardcodes Windows path separators throughout its codebase, pr
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Path Fixes** - Create branch, replace hardcoded separators in main.go (file discovery, output paths)
-- [ ] **Phase 2: Helper Path Fixes** - Replace hardcoded separators in all helper modules (MaxMind, threat intel, caches)
+- [x] **Phase 2: Helper Path Fixes** - Replace hardcoded separators in all helper modules (MaxMind, threat intel, caches)
 - [ ] **Phase 3: Build and Verify** - Compile for Linux, run tests, end-to-end verification in WSL
 
 ## Phase Details
@@ -45,8 +45,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Fix MaxMind and threat intel database paths with filepath.Join
-- [ ] 02-02-PLAN.md -- Fix helpers.go paths and sweep helpers/ for remaining hardcoded separators
+- [x] 02-01-PLAN.md -- Fix MaxMind and threat intel database paths with filepath.Join
+- [x] 02-02-PLAN.md -- Fix helpers.go paths and sweep helpers/ for remaining hardcoded separators
 
 ### Phase 3: Build and Verify
 **Goal**: LogBoost compiles for Linux and runs end-to-end on a Linux filesystem
@@ -69,5 +69,5 @@ Phases execute in numeric order: 1 -> 2 -> 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Path Fixes | 2/2 | Complete | 2026-02-06 |
-| 2. Helper Path Fixes | 0/2 | Not started | - |
+| 2. Helper Path Fixes | 2/2 | Complete | 2026-02-06 |
 | 3. Build and Verify | 0/1 | Not started | - |
