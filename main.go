@@ -273,39 +273,47 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 
 	//var DBRefs DBRefs
 
-	asnDB, err := maxminddb.Open(vars.MaxMindFileLocations["ASN"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer asnDB.Close()
-	//DBRefs.ASN = asnDB
-	cityDB, err := maxminddb.Open(vars.MaxMindFileLocations["City"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer cityDB.Close()
-	//DBRefs.City = cityDB
-	countryDB, err := maxminddb.Open(vars.MaxMindFileLocations["Country"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer countryDB.Close()
+	var asnDB *maxminddb.Reader
+	var cityDB *maxminddb.Reader
+	var countryDB *maxminddb.Reader
 	var domainDB *maxminddb.Reader
-	//DBRefs.Country = countryDB
-	if vars.MaxMindStatus["Domain"] {
-		domainDB, err = maxminddb.Open(vars.MaxMindFileLocations["Domain"])
+
+	if tempArgs["passthrough"].(bool) {
+		// In passthrough mode, skip opening MaxMind DBs -- they may not exist
+		asnDB = new(maxminddb.Reader)
+		cityDB = new(maxminddb.Reader)
+		countryDB = new(maxminddb.Reader)
+		domainDB = new(maxminddb.Reader)
+	} else {
+		var err error
+		asnDB, err = maxminddb.Open(vars.MaxMindFileLocations["ASN"])
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return
 		}
-		defer domainDB.Close()
-		//DBRefs.Domain = domainDB
-	} else {
-		domainDB = new(maxminddb.Reader)
-		//DBRefs.Domain = nil
+		defer asnDB.Close()
+		cityDB, err = maxminddb.Open(vars.MaxMindFileLocations["City"])
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		defer cityDB.Close()
+		countryDB, err = maxminddb.Open(vars.MaxMindFileLocations["Country"])
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		defer countryDB.Close()
+		if vars.MaxMindStatus["Domain"] {
+			domainDB, err = maxminddb.Open(vars.MaxMindFileLocations["Domain"])
+			if err != nil {
+				logger.Error().Msg(err.Error())
+				return
+			}
+			defer domainDB.Close()
+		} else {
+			domainDB = new(maxminddb.Reader)
+		}
 	}
 
 	fileProcessed := false
