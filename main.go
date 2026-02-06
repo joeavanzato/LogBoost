@@ -24,7 +24,7 @@ import (
 func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	dbDir := flag.String("dbdir", "", "Directory containing existing MaxMind DB Files (if not present in current working directory")
 	logDir := flag.String("logdir", "input", "Directory containing 1 or files to process")
-	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD\\output'")
+	outputDir := flag.String("outputdir", "output", "Directory where enriched output will be stored - defaults to '$CWD/output'")
 	column := flag.String("ipcol", "IP address", "Will check for a column with this name to find IP addresses for enrichment. (Defaults to 'IP Address' per Azure defaults)")
 	jsoncolumn := flag.String("jsoncol", "AuditData", "Will check for a column with this name to find the JSON Audit blob for enrichment. (Defaults to 'AuditData' per Azure defaults)")
 	regex := flag.Bool("regex", false, "If enabled, will use regex against the entire line to find the first IP address present to enrich")
@@ -149,8 +149,6 @@ func findLogsToProcess(arguments map[string]any, logger zerolog.Logger) ([]strin
 		logger.Error().Msgf("Could not find directory: %v", logDir)
 		return make([]string, 0), err
 	}
-	//globPattern := fmt.Sprintf("%v\\*.csv", logDir)
-	//entries, err := filepath.Glob(globPattern)
 	err = filepath.WalkDir(logDir, visit)
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -218,10 +216,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	tempArgs["use_ti"] = arguments["useti"].(bool)
 	//startDate, endDate := getDateBounds(tempArgs)
 
-	// TODO - Make this OS independent
-
 	for _, file := range logFiles {
-		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
 		base := strings.ToLower(filepath.Base(file))
 		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) && !vars.GetAllFiles {
 			// If the file is not a CSV and we have not specified 'convert' argument, skip it.
@@ -229,17 +224,11 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 			continue
 		}
 		inputFile := file
-		// TODO - Support Cross-Platform Compilation
-		remainderPathSplit := strings.SplitN(filepath.Dir(file), fmt.Sprintf("%v\\", arguments["logdir"].(string)), 2)
-		remainderPath := ""
-		outputPath := ""
-		if len(remainderPathSplit) == 2 {
-			remainderPath = remainderPathSplit[1]
-			// TODO - Support Cross-Platform Compilation
-			outputPath = fmt.Sprintf("%v\\%v", outputDir, remainderPath)
-		} else {
-			outputPath = outputDir
+		relDir, relErr := filepath.Rel(arguments["logdir"].(string), filepath.Dir(file))
+		if relErr != nil {
+			relDir = "."
 		}
+		outputPath := filepath.Join(outputDir, relDir)
 		err := os.MkdirAll(outputPath, os.ModePerm)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -248,8 +237,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 
 		baseFile := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		baseFile += ".csv"
-		// TODO - Support Cross-Platform Compilation
-		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
+		outputFile := filepath.Join(outputPath, baseFile)
 
 		if jobTracker.GetJobs() >= maxConcurrentFiles {
 		waitForOthers:
@@ -285,39 +273,47 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 
 	//var DBRefs DBRefs
 
-	asnDB, err := maxminddb.Open(vars.MaxMindFileLocations["ASN"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer asnDB.Close()
-	//DBRefs.ASN = asnDB
-	cityDB, err := maxminddb.Open(vars.MaxMindFileLocations["City"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer cityDB.Close()
-	//DBRefs.City = cityDB
-	countryDB, err := maxminddb.Open(vars.MaxMindFileLocations["Country"])
-	if err != nil {
-		logger.Error().Msg(err.Error())
-		return
-	}
-	defer countryDB.Close()
+	var asnDB *maxminddb.Reader
+	var cityDB *maxminddb.Reader
+	var countryDB *maxminddb.Reader
 	var domainDB *maxminddb.Reader
-	//DBRefs.Country = countryDB
-	if vars.MaxMindStatus["Domain"] {
-		domainDB, err = maxminddb.Open(vars.MaxMindFileLocations["Domain"])
+
+	if tempArgs["passthrough"].(bool) {
+		// In passthrough mode, skip opening MaxMind DBs -- they may not exist
+		asnDB = new(maxminddb.Reader)
+		cityDB = new(maxminddb.Reader)
+		countryDB = new(maxminddb.Reader)
+		domainDB = new(maxminddb.Reader)
+	} else {
+		var err error
+		asnDB, err = maxminddb.Open(vars.MaxMindFileLocations["ASN"])
 		if err != nil {
 			logger.Error().Msg(err.Error())
 			return
 		}
-		defer domainDB.Close()
-		//DBRefs.Domain = domainDB
-	} else {
-		domainDB = new(maxminddb.Reader)
-		//DBRefs.Domain = nil
+		defer asnDB.Close()
+		cityDB, err = maxminddb.Open(vars.MaxMindFileLocations["City"])
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		defer cityDB.Close()
+		countryDB, err = maxminddb.Open(vars.MaxMindFileLocations["Country"])
+		if err != nil {
+			logger.Error().Msg(err.Error())
+			return
+		}
+		defer countryDB.Close()
+		if vars.MaxMindStatus["Domain"] {
+			domainDB, err = maxminddb.Open(vars.MaxMindFileLocations["Domain"])
+			if err != nil {
+				logger.Error().Msg(err.Error())
+				return
+			}
+			defer domainDB.Close()
+		} else {
+			domainDB = new(maxminddb.Reader)
+		}
 	}
 
 	fileProcessed := false
@@ -485,7 +481,6 @@ func test() {
 }
 
 func main() {
-	// TODO - Refactor all path handling to use path.Join or similar for OS-transparency
 	//test()
 	//return
 	logger := helpers.SetupLogger()

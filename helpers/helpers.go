@@ -151,8 +151,7 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			// TODO - Support Cross-Platform Compilation
-			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
+			targetDir := filepath.Join(dir, header.Name)
 			err := os.MkdirAll(targetDir, 0755)
 			if err != nil {
 				if os.IsExist(err) {
@@ -162,8 +161,7 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 				}
 			}
 		case tar.TypeReg:
-			// TODO - Support Cross-Platform Compilation
-			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
+			targetDir := filepath.Join(dir, header.Name)
 			outFile, err := os.Create(targetDir)
 			if err != nil {
 				logger.Error().Msg(err.Error())
@@ -787,7 +785,7 @@ func CombineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 		var waiter lbtypes.WaitGroupCount
 		writeChannel := make(chan []string)
 		t := time.Now().Format("20060102150405")
-		tmpCombinedOutput := fmt.Sprintf("%v\\combinedOutput_%v.csv", k, t)
+		tmpCombinedOutput := filepath.Join(k, fmt.Sprintf("combinedOutput_%v.csv", t))
 		outputF, err := CreateOutput(tmpCombinedOutput)
 		if err != nil {
 			logger.Error().Msg(err.Error())
