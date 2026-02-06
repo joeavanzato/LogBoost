@@ -216,10 +216,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 	tempArgs["use_ti"] = arguments["useti"].(bool)
 	//startDate, endDate := getDateBounds(tempArgs)
 
-	// TODO - Make this OS independent
-
 	for _, file := range logFiles {
-		// I do not like how the below path splitting/joining is being achieved - I'm sure there is a more elegant solution...
 		base := strings.ToLower(filepath.Base(file))
 		if !strings.HasSuffix(base, ".csv") && !arguments["convert"].(bool) && !vars.GetAllFiles {
 			// If the file is not a CSV and we have not specified 'convert' argument, skip it.
@@ -227,17 +224,11 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 			continue
 		}
 		inputFile := file
-		// TODO - Support Cross-Platform Compilation
-		remainderPathSplit := strings.SplitN(filepath.Dir(file), fmt.Sprintf("%v\\", arguments["logdir"].(string)), 2)
-		remainderPath := ""
-		outputPath := ""
-		if len(remainderPathSplit) == 2 {
-			remainderPath = remainderPathSplit[1]
-			// TODO - Support Cross-Platform Compilation
-			outputPath = fmt.Sprintf("%v\\%v", outputDir, remainderPath)
-		} else {
-			outputPath = outputDir
+		relDir, relErr := filepath.Rel(arguments["logdir"].(string), filepath.Dir(file))
+		if relErr != nil {
+			relDir = "."
 		}
+		outputPath := filepath.Join(outputDir, relDir)
 		err := os.MkdirAll(outputPath, os.ModePerm)
 		if err != nil {
 			logger.Error().Msg(err.Error())
@@ -246,8 +237,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 
 		baseFile := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		baseFile += ".csv"
-		// TODO - Support Cross-Platform Compilation
-		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
+		outputFile := filepath.Join(outputPath, baseFile)
 
 		if jobTracker.GetJobs() >= maxConcurrentFiles {
 		waitForOthers:
