@@ -47,9 +47,13 @@ func SetupLogger() zerolog.Logger {
 	}
 	cw.NoColor = true
 	mw := io.MultiWriter(cw, logFile)
-	logger := zerolog.New(mw).Level(zerolog.TraceLevel)
+	logger := zerolog.New(mw).Level(zerolog.InfoLevel)
 	logger = logger.With().Timestamp().Logger()
 	return logger
+}
+
+func SetLoggerLevel(logger zerolog.Logger, level zerolog.Level) {
+	logger.Level(level)
 }
 
 // TODO - Need to determine best approach to dynamic flattening
@@ -151,8 +155,7 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			// TODO - Support Cross-Platform Compilation
-			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
+			targetDir := filepath.Join(dir, header.Name)
 			err := os.MkdirAll(targetDir, 0755)
 			if err != nil {
 				if os.IsExist(err) {
@@ -162,8 +165,7 @@ func ExtractTarGz(gzipStream io.Reader, logger zerolog.Logger, dir string) error
 				}
 			}
 		case tar.TypeReg:
-			// TODO - Support Cross-Platform Compilation
-			targetDir := fmt.Sprintf("%v\\%v", dir, header.Name)
+			targetDir := filepath.Join(dir, header.Name)
 			outFile, err := os.Create(targetDir)
 			if err != nil {
 				logger.Error().Msg(err.Error())
@@ -295,6 +297,7 @@ func findClientIP(logger zerolog.Logger, jsonBlob string) string {
 func enrichRecord(logger zerolog.Logger, record []string, asnDB maxminddb.Reader, cityDB maxminddb.Reader, countryDB maxminddb.Reader, domainDB maxminddb.Reader, ipAddressColumn int, jsonColumn int, useRegex bool, useDNS bool, tempArgs map[string]any) []string {
 	// Columns this function should append to input record (in order): ASN, Country, City, Domains, TOR, SUSPICIOUS, PROXY
 	// Expects a slice representing a single log record as well as an index representing either the column where an IP address is stored or the column where a JSON blob is stored (if we are not using regex on the entire line to find an IP
+	logger.Debug().Msgf("PROCESSING RECORD %s", record)
 	isDataCenter := false
 	ipString := ""
 	var exists bool
@@ -787,7 +790,7 @@ func CombineOutputs(arguments map[string]any, logger zerolog.Logger) error {
 		var waiter lbtypes.WaitGroupCount
 		writeChannel := make(chan []string)
 		t := time.Now().Format("20060102150405")
-		tmpCombinedOutput := fmt.Sprintf("%v\\combinedOutput_%v.csv", k, t)
+		tmpCombinedOutput := filepath.Join(k, fmt.Sprintf("combinedOutput_%v.csv", t))
 		outputF, err := CreateOutput(tmpCombinedOutput)
 		if err != nil {
 			logger.Error().Msg(err.Error())
