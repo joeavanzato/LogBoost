@@ -43,8 +43,8 @@ func TestLookupIP(t *testing.T) {
 	if len(newresults) != 1 {
 		t.Fatalf(`Error lookupIPRecords - wanted 0, got %v`, len(newresults))
 	}
-	if newresults[0] != "None" {
-		t.Fatalf(`Error lookupIPRecords - wanted None, got %v`, newresults[0])
+	if newresults[0] != "none" {
+		t.Fatalf(`Error lookupIPRecords - wanted none, got %v`, newresults[0])
 	}
 }
 
