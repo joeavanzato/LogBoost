@@ -40,6 +40,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	combine := flag.Bool("combine", false, "Combine all files in each output directory into a single CSV per-directory - this will not work if the files do not share the same header sequence/number of columns.")
 	buildti := flag.Bool("buildti", false, "Build the threat intelligence database based on feed_config.json")
 	updateti := flag.Bool("updateti", false, "Update (and build if it doesn't exist) the threat intelligence database based on feed_config.json")
+	tidb := flag.String("tidb", "", "Path to the threat intelligence database file (defaults to 'threats.db' in current working directory)")
 	rawtxt := flag.Bool("rawtxt", false, "When -convert is enabled and there is no known parsing technique for the provided file, treat the entire line as a single column named raw and use regex to find the first IP to enrich.")
 	useti := flag.Bool("useti", false, "Use the threat intelligence database if it exists")
 	startdate := flag.String("startdate", "", "Parse and use provided value as a start date for log outputs.  If no end date is provided, will find all events from this point onwards.")
@@ -59,6 +60,7 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 	includedc := flag.Bool("includedc", false, "Include datacenter list for Threat Intelligence enrichment - will add approximately ~129 million IP addresses to the DB (~7 GB on disk)")
 	idb := flag.Bool("idb", false, "Perform a live enrichment using the Shodan InternetDB")
 	ip := flag.String("ip", "", "Provide an IP address for ad-hoc enrichment via stdout")
+	debug := flag.Bool("debug", false, "Enable debug logging")
 	flag.Parse()
 
 	if *getall {
@@ -102,6 +104,13 @@ func parseArgs(logger zerolog.Logger) (map[string]any, error) {
 		"ip":              *ip,
 		"whois":           *whois,
 		"idb":             *idb,
+		"debug":           *debug,
+		"tidb":            *tidb,
+	}
+
+	// Set custom threat intelligence database path if provided
+	if *tidb != "" {
+		helpers.ThreatDBFile = *tidb
 	}
 
 	if (*intelfile != "" && (*inteltype == "" || *intelname == "")) || ((*intelfile == "" || *intelname == "") && *inteltype != "") || ((*intelfile == "" || *inteltype == "") && *intelname != "") {
@@ -229,14 +238,12 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 			continue
 		}
 		inputFile := file
-		// TODO - Support Cross-Platform Compilation
-		remainderPathSplit := strings.SplitN(filepath.Dir(file), fmt.Sprintf("%v\\", arguments["logdir"].(string)), 2)
+		remainderPathSplit := strings.SplitN(filepath.Dir(file), arguments["logdir"].(string)+string(os.PathSeparator), 2)
 		remainderPath := ""
 		outputPath := ""
 		if len(remainderPathSplit) == 2 {
 			remainderPath = remainderPathSplit[1]
-			// TODO - Support Cross-Platform Compilation
-			outputPath = fmt.Sprintf("%v\\%v", outputDir, remainderPath)
+			outputPath = filepath.Join(outputDir, remainderPath)
 		} else {
 			outputPath = outputDir
 		}
@@ -248,8 +255,7 @@ func enrichLogs(arguments map[string]any, logFiles []string, logger zerolog.Logg
 
 		baseFile := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 		baseFile += ".csv"
-		// TODO - Support Cross-Platform Compilation
-		outputFile := fmt.Sprintf("%v\\%v", outputPath, baseFile)
+		outputFile := filepath.Join(outputPath, baseFile)
 
 		if jobTracker.GetJobs() >= maxConcurrentFiles {
 		waitForOthers:
@@ -367,6 +373,8 @@ func processFile(arguments map[string]any, inputFile string, outputFile string, 
 
 			}
 		}
+
+		// TODO - If file is small enough (argument-based), load it entirely into memory if we know it's a JSON file
 
 		// JSON-based per-line logging Check
 		if !fileProcessed {
@@ -494,6 +502,10 @@ func main() {
 		return
 	}
 
+	if arguments["debug"].(bool) {
+		helpers.SetLoggerLevel(logger, zerolog.DebugLevel)
+	}
+
 	err = helpers.SetupPrivateNetworks()
 	if err != nil {
 		logger.Error().Msg(err.Error())
@@ -581,7 +593,8 @@ func main() {
 	APIerr, APIkey := helpers.SetAPIUrls(arguments, logger)
 	Finderr := helpers.FindOrGetDBs(arguments, logger, APIkey)
 	if APIerr != nil && Finderr != nil && !arguments["passthrough"].(bool) {
-		// We could not find an API key, could not find existing DBs and did not specify that we are doing a 'passthrough' execution
+		// We could not find an API key, could not find existing DBs and did not specify that we are doing a '
+		//' execution
 		return
 	}
 
