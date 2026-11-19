@@ -388,6 +388,11 @@
 			"type": ["suspicious"]
 		},
 		{
+			"name": "netapi_honeypot_attackers",
+			"url": "https://netapi.com/api2/?method=compromised&dataset_type=ip&header=0",
+			"type": ["suspicious"]
+		},
+		{
 			"name": "drb_nord_vpn",
 			"url": "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/vpn/NordVPNIPs.csv",
 			"type": ["vpn"]
